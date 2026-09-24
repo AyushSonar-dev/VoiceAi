@@ -1,0 +1,17 @@
+{
+  "name": "echolabs",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": ["backend", "frontend"],
+  "scripts": {
+    "dev:backend": "npm run dev --workspace=backend",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "seed": "npm run seed --workspace=backend",
+    "demo": "npm run demo --workspace=backend",
+    "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend",
+    "test": "npm run test --workspace=backend"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
