@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Capabilities, EchoState } from "@/types";
-import { getCapabilities, getState, newSession, postTurn } from "@/lib/api";
+import { callTool, getCapabilities, getState, getVoiceSetup, newSession, postTurn } from "@/lib/api";
 import { ensureSessionId } from "@/lib/session";
 import { fallbackSpeak, startRecording, type RecordingHandle } from "@/lib/audio";
+import { VoiceAgentSession, type AgentStatus } from "@/lib/voiceAgent";
 import { usePrefersReducedMotion, type Theme } from "@/lib/a11y";
 import { LiveRegion } from "./LiveRegion";
 import { VoicePanel } from "./VoicePanel";
@@ -26,11 +27,18 @@ export function EchoApp() {
   const [lastUserText, setLastUserText] = useState("");
   const [lastReply, setLastReply] = useState("");
   const [fillerText, setFillerText] = useState("");
+  const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [theme, setTheme] = useState<Theme>("system");
   const [fontSizePercent, setFontSizePercent] = useState(100);
-  const recordingHandle = useRef<RecordingHandle | null>(null);
+  const demoRecordingHandle = useRef<RecordingHandle | null>(null);
+  const voiceSession = useRef<VoiceAgentSession | null>(null);
   const replyCounter = useRef(0);
   const reducedMotion = usePrefersReducedMotion();
+
+  const voiceAgent = caps?.voiceAgent ?? false;
+  const effectiveBusy = voiceAgent
+    ? agentStatus === "connecting" || agentStatus === "thinking"
+    : busy;
 
   // ---- boot: settings, capabilities, session, state ----
   useEffect(() => {
@@ -72,6 +80,46 @@ export function EchoApp() {
     localStorage.setItem(FONT_KEY, String(fontSizePercent));
   }, [fontSizePercent]);
 
+  useEffect(() => () => voiceSession.current?.end(), []);
+
+  const refreshState = useCallback(async () => {
+    if (!sessionId) return;
+    const s = await getState(sessionId).catch(() => null);
+    if (s) setEchoState(s);
+  }, [sessionId]);
+
+  const ensureVoice = useCallback(async (): Promise<VoiceAgentSession> => {
+    const existing = voiceSession.current;
+    if (existing && existing.isReady) return existing;
+    if (existing) existing.end();
+    if (!sessionId) throw new Error("no app session yet");
+
+    const setup = await getVoiceSetup();
+    const session = new VoiceAgentSession(
+      setup,
+      async (name, args) => callTool(name, args, sessionId),
+      {
+        onStatus: (status) => setAgentStatus(status),
+        onUserTranscript: (text, final) => {
+          if (final && text.trim()) setLastUserText(text.trim());
+        },
+        onAgentTranscript: (text, final) => {
+          if (final && text.trim()) setLastReply(text.trim());
+        },
+        onToolCall: () => {
+          void refreshState();
+        },
+        onReplyDone: () => {
+          // busy is derived from agentStatus ("thinking" -> "listening")
+        },
+        onError: (message) => setLastReply(`Voice agent: ${message}`),
+      }
+    );
+    voiceSession.current = session;
+    await session.connect();
+    return session;
+  }, [sessionId, refreshState]);
+
   const playReply = useCallback(
     (reply: string, audioUrl: string | null) => {
       const speakFallback = () => fallbackSpeak(reply, { rate: 1, pitch: 1 });
@@ -87,7 +135,31 @@ export function EchoApp() {
 
   const runTurn = useCallback(
     async (input: { text?: string; audioBase64?: string }) => {
-      if (!sessionId || busy) return;
+      if (!sessionId || !caps) return;
+
+      // ---- real mode: one AssemblyAI Voice Agent session ----
+      if (caps.voiceAgent) {
+        if (effectiveBusy) return;
+        setLastReply("");
+        const text = input.text?.trim();
+        if (!text) {
+          setLastReply("Tap the mic and speak out loud — I transcribe you live.");
+          return;
+        }
+        setLastUserText(text);
+        try {
+          const session = await ensureVoice();
+          await session.input(text);
+        } catch (err) {
+          setLastReply(
+            `I couldn't reach the voice agent — ${err instanceof Error ? err.message : "unknown error"}. Try again.`
+          );
+        }
+        return;
+      }
+
+      // ---- demo mode: text / recorded audio through the plain tool loop ----
+      if (effectiveBusy) return;
       setBusy(true);
       setLastReply("");
       setFillerText("");
@@ -107,29 +179,39 @@ export function EchoApp() {
         setFillerText("");
       }
     },
-    [sessionId, busy, playReply]
+    [sessionId, caps, effectiveBusy, ensureVoice, playReply]
   );
 
   const toggleMic = useCallback(async () => {
-    if (busy) return;
+    if (effectiveBusy) return;
     if (recording) {
-      const handle = recordingHandle.current;
-      recordingHandle.current = null;
       setRecording(false);
-      const audioBase64 = await handle?.stop();
-      if (audioBase64) await runTurn({ audioBase64 });
-      else setLastReply("I didn't capture any audio. Try again, or type your request.");
+      if (voiceAgent) {
+        voiceSession.current?.stopMic();
+      } else {
+        const handle = demoRecordingHandle.current;
+        demoRecordingHandle.current = null;
+        const audioBase64 = await handle?.stop();
+        if (audioBase64) await runTurn({ audioBase64 });
+        else setLastReply("I didn't capture any audio. Try again, or type your request.");
+      }
       return;
     }
     try {
-      recordingHandle.current = await startRecording();
-      setRecording(true);
+      if (voiceAgent) {
+        const session = await ensureVoice();
+        await session.startMic();
+        setRecording(true);
+      } else {
+        demoRecordingHandle.current = await startRecording();
+        setRecording(true);
+      }
     } catch {
       setLastReply(
         "I can't reach the microphone here — type your request instead, or allow mic access and reload."
       );
     }
-  }, [busy, recording, runTurn]);
+  }, [effectiveBusy, recording, voiceAgent, ensureVoice, runTurn]);
 
   const lastActionType =
     echoState?.lastAction && typeof echoState.lastAction === "object"
@@ -144,7 +226,7 @@ export function EchoApp() {
           <h1>Echo — voice shopping</h1>
           <p style={{ margin: 0, color: "var(--muted)" }}>
             {caps
-              ? `STT ${caps.stt ? "AssemblyAI" : "demo text"} · TTS ${caps.tts ? "ElevenLabs" : "browser"} · DB ${caps.db} · ${caps.currency}`
+              ? `${caps.voiceAgent ? "AssemblyAI Voice Agent" : `STT ${caps.stt ? "AssemblyAI" : "demo text"} · TTS ${caps.tts ? "ElevenLabs" : "browser"}`} · DB ${caps.db} · ${caps.currency}`
               : "connecting…"}
           </p>
         </div>
@@ -156,13 +238,15 @@ export function EchoApp() {
         />
       </header>
 
-      <LiveRegion text={busy && fillerText ? fillerText : lastReply} label="What Echo says" />
+      <LiveRegion text={effectiveBusy && fillerText ? fillerText : lastReply} label="What Echo says" />
 
       <VoicePanel
         sttAvailable={caps?.stt ?? false}
         ttsAvailable={caps?.tts ?? false}
-        busy={busy}
+        voiceAgent={voiceAgent}
+        busy={effectiveBusy}
         recording={recording}
+        agentStatus={agentStatus}
         onMicToggle={() => void toggleMic()}
         onSubmitText={(text) => void runTurn({ text })}
         lastUserText={lastUserText}
@@ -171,7 +255,7 @@ export function EchoApp() {
       <ProductList
         products={echoState?.recentProducts ?? []}
         currency={caps?.currency ?? "₹"}
-        busy={busy}
+        busy={effectiveBusy}
         onAdd={(optionIndex) =>
           void runTurn({ text: `add the ${ORDINALS[optionIndex] ?? `option ${optionIndex + 1}`} one to my cart` })
         }
@@ -191,7 +275,7 @@ export function EchoApp() {
           }
         }
         currency={caps?.currency ?? "₹"}
-        busy={busy}
+        busy={effectiveBusy}
         onRemove={(name) => void runTurn({ text: `remove the ${name} from my cart` })}
         onApplyCoupon={(code) => void runTurn({ text: `apply ${code}` })}
         onCheckout={() => void runTurn({ text: "check out" })}
@@ -205,7 +289,7 @@ export function EchoApp() {
           <button
             type="button"
             className="btn primary"
-            disabled={busy}
+            disabled={effectiveBusy}
             onClick={() => void runTurn({ text: "yes, place the order" })}
           >
             Yes, place the order

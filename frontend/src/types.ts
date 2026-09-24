@@ -49,6 +49,32 @@ export interface Capabilities {
   db: string;
   currency: string;
   categories: string[];
+  voiceAgent: boolean;
+  llmMode: string;
+}
+
+/**
+ * Inline session config returned by POST /api/voice/setup. The browser opens a
+ * direct WebSocket to wss://agents.assemblyai.com/v1/ws?token=... and sends:
+ * { type: "session.update", session } — AssemblyAI then owns STT, LLM, TTS
+ * and turn-taking. Our backend only mints the token and serves the config.
+ */
+export interface VoiceAgentSetup {
+  token: string;
+  session: {
+    system_prompt: string;
+    greeting: string;
+    tools: Array<{ type: "function"; name: string; description: string; parameters: Record<string, unknown> }>;
+    input: Record<string, unknown>;
+    output: Record<string, unknown>;
+  };
+}
+
+export interface ToolResult {
+  success: boolean;
+  error?: string;
+  message?: string;
+  data?: Record<string, unknown>;
 }
 
 export type SseEvent =

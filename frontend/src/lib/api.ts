@@ -1,4 +1,4 @@
-import type { Capabilities, EchoState, SseEvent, TurnEvents } from "@/types";
+import type { Capabilities, EchoState, SseEvent, ToolResult, TurnEvents, VoiceAgentSetup } from "@/types";
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, init);
@@ -17,6 +17,32 @@ export async function getCapabilities(): Promise<Capabilities> {
 
 export async function getState(sessionId: string): Promise<EchoState> {
   return readJson<EchoState>(`/api/state/${encodeURIComponent(sessionId)}`);
+}
+
+/**
+ * Mint a short-lived Voice Agent token + inline agent config from our backend.
+ * The real voice path connects straight from the browser to AssemblyAI using
+ * this token; the raw API key never leaves the server.
+ */
+export async function getVoiceSetup(): Promise<VoiceAgentSetup> {
+  return readJson<VoiceAgentSetup>("/api/voice/setup", { method: "POST" });
+}
+
+/**
+ * Execute one tool call on the Express tool gateway. This is what the Voice
+ * Agent's `tool.call` events are relayed to — validation, session scoping and
+ * Mongo mutations all happen server-side, right here.
+ */
+export async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  sessionId: string
+): Promise<ToolResult> {
+  return readJson<ToolResult>(`/api/tools/${encodeURIComponent(name)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...args, sessionId }),
+  });
 }
 
 /**

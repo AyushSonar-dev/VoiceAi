@@ -2,21 +2,46 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
+export type AgentStatusShown = "connecting" | "listening" | "thinking" | "ended" | "error";
+
 interface Props {
   sttAvailable: boolean;
   ttsAvailable: boolean;
+  /** true when the real AssemblyAI Voice Agent backend is configured */
+  voiceAgent: boolean;
   busy: boolean;
   recording: boolean;
+  agentStatus: AgentStatusShown | null;
   onMicToggle: () => void;
   onSubmitText: (text: string) => void;
   lastUserText: string;
 }
 
+function statusText(status: AgentStatusShown | null, recording: boolean): string {
+  if (recording) return "Listening… speak now.";
+  switch (status) {
+    case "connecting":
+      return "Connecting to the voice agent…";
+    case "thinking":
+      return "Thinking…";
+    case "error":
+      return "The voice agent hit an error. Try again.";
+    case "ended":
+      return "Call ended. Tap the mic or type to start again.";
+    case "listening":
+      return "Connected — speak or type.";
+    default:
+      return "Tap the mic or type below.";
+  }
+}
+
 export function VoicePanel({
   sttAvailable,
   ttsAvailable,
+  voiceAgent,
   busy,
   recording,
+  agentStatus,
   onMicToggle,
   onSubmitText,
   lastUserText,
@@ -38,14 +63,18 @@ export function VoicePanel({
     setDraft("");
   };
 
-  const canRecord = sttAvailable && mediaSupported && !busy;
+  const micUsable = (voiceAgent || sttAvailable) && mediaSupported;
+  const canMic = micUsable && !busy;
+  const demoFallback = !voiceAgent && !sttAvailable;
 
   return (
     <div className="card" aria-labelledby="voice-heading">
       <div className="row spread">
         <h2 id="voice-heading">Talk to Echo</h2>
         <p className="transcript" style={{ margin: 0 }}>
-          STT: {sttAvailable ? "AssemblyAI" : "demo text"} · TTS: {ttsAvailable ? "ElevenLabs" : "browser voice"}
+          {voiceAgent
+            ? "Voice: AssemblyAI Voice Agent"
+            : `STT: ${sttAvailable ? "AssemblyAI" : "demo text"} · TTS: ${ttsAvailable ? "ElevenLabs" : "browser voice"}`}
         </p>
       </div>
 
@@ -54,27 +83,27 @@ export function VoicePanel({
           type="button"
           className={`btn micBtn${recording ? " recording" : ""}`}
           onClick={onMicToggle}
-          disabled={!canRecord}
-          aria-label={recording ? "Stop recording" : "Start voice recording"}
+          disabled={!canMic}
+          aria-label={recording ? "Stop listening" : "Start listening"}
           title={
-            !sttAvailable
-              ? "Voice input needs the AssemblyAI key — use the text box below."
+            !micUsable
+              ? "Voice needs the AssemblyAI backend — use the text box below."
               : !mediaSupported
                 ? "This browser can't capture audio — use the text box below."
                 : recording
-                  ? "Stop recording"
-                  : "Start voice recording"
+                  ? "Stop listening"
+                  : "Start listening"
           }
         >
           {recording ? "Stop" : "Mic"}
         </button>
 
         <span aria-live="polite" className="transcript" data-testid="mic-status">
-          {recording ? "Listening… speak now." : busy ? "Thinking…" : "Tap the mic or type below."}
+          {statusText(agentStatus, recording)}
         </span>
       </div>
 
-      {!sttAvailable && (
+      {demoFallback && (
         <p className="transcript" style={{ marginTop: 0 }}>
           DEMO FALLBACK: voice isn&apos;t configured yet, so you can type what you would say out loud.
         </p>
