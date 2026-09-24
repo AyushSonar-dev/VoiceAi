@@ -72,6 +72,10 @@ export function capabilitiesRouter(): Router {
     res.json({
       ...cap,
       db: getMode(),
+      // Real voice = the AssemblyAI Voice Agent API (STT+LLM+TTS+turn-taking
+      // in one WebSocket). When the key is absent, demo mode uses text-in only.
+      voiceAgent: Boolean(config.assemblyaiKey),
+      llmMode: config.assemblyaiKey ? "assemblyai-voice-agent" : cap.llmMode,
       currency: config.currency,
       categories: Array.from(new Set(["Electronics", "Jewelry", "Men's Clothing", "Women's Clothing"])),
     });

@@ -17,6 +17,13 @@ export const config = {
   assemblyaiKey: process.env.ASSEMBLYAI_API_KEY || "",
   assemblyaiBaseUrl: process.env.ASSEMBLYAI_BASE_URL || "https://api.assemblyai.com",
 
+  // Voice Agent API (agents host): the agent owns STT + LLM + TTS + turn-taking.
+  voiceAgentHost: process.env.VOICE_AGENT_HOST || "https://agents.assemblyai.com",
+  voiceAgentWsUrl: process.env.VOICE_AGENT_WS_URL || "wss://agents.assemblyai.com/v1/ws",
+  voiceTokenTtlSeconds: Number(process.env.VOICE_TOKEN_TTL_SECONDS || 300),
+  voiceMaxSessionSeconds: Number(process.env.VOICE_MAX_SESSION_SECONDS || 900),
+  voiceId: process.env.VOICE_ID || "ivy",
+
   elevenLabsKey: process.env.ELEVENLABS_API_KEY || "",
   elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",

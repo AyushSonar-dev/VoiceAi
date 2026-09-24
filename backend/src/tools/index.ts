@@ -176,7 +176,124 @@ export async function dispatchTool(name: string, params: Record<string, any>): P
   }
 }
 
-export { searchProducts, getProduct, addToCart, removeFromCart, getCart, applyCoupon, checkout };
+/**
+ * Voice Agent API tool schema (flat `{type,name,description,parameters}`, no
+ * OpenAI `function` wrapper) with the internal `sessionId` parameter stripped:
+ * the agent never sees it — the relay (browser/script) injects it before the
+ * call reaches the Express tool gateway, where session-scoped validation lives.
+ *
+ * Names are snake_case verb-noun and descriptions name their triggers per the
+ * AssemblyAI tool-calling guidance ("call this when...", "when in doubt, call
+ * the tool") — the managed LLM's main signal for when to fire a tool.
+ */
+export const VOICE_AGENT_TOOL_NAME_MAP: Record<string, string> = {
+  search_products: "searchProducts",
+  get_product: "getProduct",
+  add_to_cart: "addToCart",
+  remove_from_cart: "removeFromCart",
+  get_cart: "getCart",
+  apply_coupon: "applyCoupon",
+  checkout: "checkout",
+};
+
+type VoiceAgentToolDefinition = {
+  type: "function";
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+};
+
+function voaTool(
+  snakeName: string,
+  description: string,
+  properties: Record<string, unknown>,
+  required: string[]
+): VoiceAgentToolDefinition {
+  return {
+    type: "function",
+    name: snakeName,
+    description,
+    parameters: { type: "object", properties, required },
+  };
+}
+
+export const VOICE_AGENT_TOOL_DEFINITIONS: VoiceAgentToolDefinition[] = [
+  voaTool(
+    "search_products",
+    "Search the EchoLabs catalog (Electronics, Jewelry, Men's Clothing, Women's Clothing) with optional category, budget, rating or keywords. Returns 1-4 real products, each with a genuine productId. Call this whenever the user asks to find, browse, buy, or show something (e.g. 'bracelets', 'rings under 2500', 'a gift'). When in doubt, call this — do not answer from memory.",
+    {
+      category: {
+        type: "string",
+        enum: ["Electronics", "Jewelry", "Men's Clothing", "Women's Clothing"],
+        description: "Optional. One allowed category only.",
+      },
+      maxPrice: { type: "number", description: "Optional. Maximum budget in the store currency, e.g. 2500." },
+      minRating: { type: "number", description: "Optional. Minimum star rating 0-5." },
+      q: { type: "string", description: "Optional. Keywords to match against name/description/specs, e.g. 'ring'." },
+      purpose: { type: "string", description: "Optional. The user's stated purpose, e.g. 'gift'. Helps scope the search." },
+      maxResults: { type: "number", description: "Optional. How many options (default 2, max 4)." },
+    },
+    []
+  ),
+  voaTool(
+    "get_product",
+    "Fetch full details for one product the user is already discussing. Use only productId values a previous tool result returned this session — never invent one. Call this when the user asks about a specific item that was already shown.",
+    {
+      productId: { type: "string", description: "A productId from a search_products or get_cart result earlier in this session." },
+    },
+    ["productId"]
+  ),
+  voaTool(
+    "add_to_cart",
+    "Add a productId (from a previous tool result this session) to the cart. Idempotent — a repeat add does not double the line. If out of stock, the result carries a real in-stock alternative to offer. Call this when the user asks to add/buy/put something in the cart.",
+    {
+      productId: { type: "string", description: "A productId returned by a tool earlier in this session." },
+      quantity: { type: "number", description: "Default 1." },
+    },
+    ["productId"]
+  ),
+  voaTool(
+    "remove_from_cart",
+    "Remove a line (or a quantity of it) from the cart. productId must come from a previous get_cart result this session. Call when the user asks to remove/take out something.",
+    {
+      productId: { type: "string", description: "A productId currently in the cart (from a get_cart result)." },
+      quantity: { type: "number", description: "Omit to remove the whole line." },
+    },
+    ["productId"]
+  ),
+  voaTool(
+    "get_cart",
+    "Return the cart lines, coupon and totals. Call when the user asks 'what's in my cart', before/after changes, and before the checkout preview.",
+    {},
+    []
+  ),
+  voaTool(
+    "apply_coupon",
+    "Validate and apply a coupon code to the cart. Only valid active codes apply; the result says exactly which. Call when the user gives a code — e.g. WELCOME15, SAVE10, VIP20, FLASH25.",
+    {
+      code: { type: "string", description: "The coupon code exactly as spoken, e.g. 'WELCOME15'." },
+    },
+    ["code"]
+  ),
+  voaTool(
+    "checkout",
+    "Start checkout in two steps. FIRST call without confirm: read the returned preview (items, coupon if any, total) aloud and ask for an explicit yes. ONLY after the user clearly confirms, call again with confirm:true — the backend creates the order then. Never call with confirm:true without explicit confirmation.",
+    {
+      confirm: { type: "boolean", description: "false/omitted = preview only. true = place the order (only after the user explicitly confirmed)." },
+    },
+    []
+  ),
+];
+
+export {
+  searchProducts,
+  getProduct,
+  addToCart,
+  removeFromCart,
+  getCart,
+  applyCoupon,
+  checkout,
+};
 export type {
   SearchProductsParams,
   GetProductParams,
