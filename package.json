@@ -6,6 +6,8 @@
   "scripts": {
     "dev:backend": "npm run dev --workspace=backend",
     "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:frontend:clean": "rm -rf frontend/.next && npm run dev:frontend",
+    "serve": "npm run build --workspace=frontend && npm run start --workspace=frontend",
     "seed": "npm run seed --workspace=backend",
     "demo": "npm run demo --workspace=backend",
     "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend",

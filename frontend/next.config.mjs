@@ -1,8 +1,12 @@
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 /**
  * Next.js rewrites API calls to the EchoLabs backend (the "tool gateway").
  * Run `npm run dev --workspace=backend` alongside `npm run dev --workspace=frontend`.
  */
 const nextConfig = {
+  outputFileTracingRoot: path.dirname(fileURLToPath(import.meta.url)),
   async rewrites() {
     return [
       {

@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
+import path from "node:path";
 import type { Server } from "node:http";
+import { fileURLToPath } from "node:url";
 import { config } from "./config.js";
 import { initStore } from "./db/index.js";
 import { sessionRouter } from "./routes/session.js";
@@ -33,7 +35,10 @@ export async function startServer(opts: { port?: number } = {}): Promise<Server>
 
 // Main entry (dev/start). Tests and the demo script import startServer directly
 // so they can bind an ephemeral port.
-if (process.argv[1] && process.argv[1].endsWith("src/index.ts")) {
+const entrypoint = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const currentFile = path.resolve(fileURLToPath(import.meta.url));
+
+if (entrypoint === currentFile) {
   startServer().catch((err) => {
     console.error("[ECHOLABS] failed to start:", err);
     process.exit(1);
