@@ -74,7 +74,7 @@ export class MongoStore implements Store {
   // ---------------- carts ----------------
   async getCart(sessionId: string): Promise<Cart | null> {
     const doc = await CartModel.findOne({ sessionId }).lean();
-    return cartShape(doc);
+    return doc ? cartShape(doc) : null;
   }
 
   async getOrCreateCart(sessionId: string): Promise<Cart> {
@@ -104,7 +104,7 @@ export class MongoStore implements Store {
   // ---------------- coupons ----------------
   async findCouponByCode(code: string): Promise<Coupon | null> {
     const doc = await CouponModel.findOne({ code: code.toUpperCase().trim() }).lean();
-    return couponShape(doc);
+    return doc ? couponShape(doc) : null;
   }
 
   // ---------------- orders ----------------
@@ -115,7 +115,7 @@ export class MongoStore implements Store {
 
   async getLatestOrder(sessionId: string): Promise<Order | null> {
     const doc = await OrderModel.findOne({ sessionId }).sort({ createdAt: -1 }).lean();
-    return orderShape(doc);
+    return doc ? orderShape(doc) : null;
   }
 
   // ---------------- stock ----------------
@@ -135,7 +135,7 @@ export class MongoStore implements Store {
   // ---------------- conversation sessions ----------------
   async getSession(sessionId: string): Promise<ConversationSession | null> {
     const doc = await SessionModel.findOne({ sessionId }).lean();
-    return sessionShape(doc);
+    return doc ? sessionShape(doc) : null;
   }
 
   async getOrCreateSession(sessionId: string): Promise<ConversationSession> {

@@ -29,7 +29,7 @@ export interface SearchProductsParams {
  */
 export async function searchProducts(params: SearchProductsParams): Promise<ToolResult> {
   const store = getStore();
-  const session = await requireSession(params.sessionId);
+  let session = await requireSession(params.sessionId);
 
   const category = params.category?.trim() || undefined;
   if (category && !ALLOWED_CATEGORIES.includes(category)) {
@@ -60,7 +60,7 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
     );
   }
 
-  await rememberProducts(store, session, items.map((p) => p.id));
+  session = await rememberProducts(store, session, items.map((p) => p.id));
   await recordAction(store, session, { type: "searchProducts", productIds: items.map((p) => p.id) });
 
   const listed = items

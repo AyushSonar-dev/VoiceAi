@@ -20,7 +20,7 @@ export interface AddToCartParams {
 
 export async function addToCart(params: AddToCartParams): Promise<ToolResult> {
   const store = getStore();
-  const session = await requireSession(params.sessionId);
+  let session = await requireSession(params.sessionId);
 
   assertReferencable(session, params.productId);
 
@@ -45,7 +45,7 @@ export async function addToCart(params: AddToCartParams): Promise<ToolResult> {
     // Voice-UX rule: out of stock => offer a REAL in-stock alternative from the
     // same category (never a plain refusal).
     const alternative = await inStockAlternative(product.category, product.id);
-    await rememberProducts(store, session, alternative ? [alternative.id] : []);
+    session = await rememberProducts(store, session, alternative ? [alternative.id] : []);
     await recordAction(store, session, { type: "addToCart_failed", productId: product.id });
     if (alternative) {
       return fail(

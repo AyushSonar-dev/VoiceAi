@@ -64,48 +64,68 @@ export class PlaceholderBrain implements Llm {
       return this.emit("checkout", { sessionId: ctx.sessionId });
     }
 
-    // --- search / browse ---
-    if (
+    const addIntent = /(add|put|include|stick|throw).*?(cart|basket|order)|add .* (to|in)/.test(low);
+    const removeIntent = /(remove|take (it )?out|delete|drop|get rid of|minus)/.test(low);
+    const detailIntent = /(tell me (more|about)|more about|about the|details|specs|specifications|info on|show me that)/.test(low);
+    const cartIntent = /(what.*cart|cart.*to?tal|my (shopping )?cart|anything in my cart|cart contents)/.test(low);
+    const searchIntent =
       /(show|find|search|look(ing)? for|get me|need|want|browse|suggest|recommend|looking)/.test(low) ||
       /(^|\s)(elect|jewel|clothing|shirt|dress|earbud|watch|speaker|lamp|jacket|sweater|necklace|bracelet|bag|shoe)/.test(low) ||
       /under\s+(?:rupees|rs\.?|inr|\u20b9)?\s*\d/.test(low) ||
-      /\d[\d,]*\s*(?:rupees|rs\.?|inr)/.test(low)
-    ) {
-      const params = this.buildSearchParams(low, ctx.sessionId);
-      return this.emit("searchProducts", params);
+      /\d[\d,]*\s*(?:rupees|rs\.?|inr)/.test(low);
+
+    // --- "find X and add/remove/tell me about the first one" in one breath:
+    //     run the search FIRST, then the follow-up referent resolves against it.
+    if (addIntent && searchIntent) {
+      return this.emit("searchProducts", this.buildSearchParams(low, ctx.sessionId));
     }
 
-    // --- cart contents ---
-    if (/(what.*cart|cart.*to?tal|my (shopping )?cart|anything in my cart|cart contents)/.test(low)) {
+    // --- cart contents (never shadow an add/remove utterance) ---
+    if (cartIntent && !addIntent && !removeIntent) {
       return this.emit("getCart", { sessionId: ctx.sessionId });
     }
 
+    // --- add to cart ---
+    if (addIntent) {
+      return this.resolveCartAction(text, ctx, "addToCart");
+    }
+
+    // --- remove from cart (by handed id, or by the user's own words) ---
+    if (removeIntent) {
+      const id = this.resolveReferent(text, ctx.recentProductIds);
+      if (id) return this.emit("removeFromCart", { sessionId: ctx.sessionId, productId: id });
+      const name = this.nameFromMessage(text);
+      if (name) return this.emit("removeFromCart", { sessionId: ctx.sessionId, productName: name });
+      if (ctx.recentProductIds.length) return this.productReferentQuestion();
+      return {
+        message: {
+          role: "assistant",
+          content:
+            "I want to make sure I remove the right thing. Tell me which cart item to take out, like “remove the pearl earrings from my cart”.",
+        },
+      };
+    }
+
+    // --- product detail ---
+    if (detailIntent) {
+      const id = this.resolveReferent(text, ctx.recentProductIds);
+      if (id) return this.emit("getProduct", { sessionId: ctx.sessionId, productId: id });
+      return this.productReferentQuestion();
+    }
+
+    // --- search / browse ---
+    if (searchIntent) {
+      return this.emit("searchProducts", this.buildSearchParams(low, ctx.sessionId));
+    }
+
     // --- coupon ---
-    if (/(coupon|promo|code|discount|voucher|offer)/.test(low)) {
-      const code = low.match(/\b([a-z]{3,}\d{0,2})\b/i)?.[1];
-      if (code && code !== "coupon" && code !== "promo") {
+    if (/(coupon|promo|code|discount|voucher|offer|welcome\d{0,2}|save\d{0,2}|vip\d{0,2}|flash\d{0,2})/.test(low)) {
+      const code = low.match(/\b([a-z]{3,}\d{1,2})\b/i)?.[1];
+      if (code && !/^(coupon|promo|code|discount|voucher|offer)$/i.test(code)) {
         return this.emit("applyCoupon", { sessionId: ctx.sessionId, code: code.toUpperCase() });
       }
       // No code given -> just report the cart state / ask for a code.
       return { message: { role: "assistant", content: "Which coupon code would you like to use? For example, WELCOME15." } };
-    }
-
-    // --- add to cart ---
-    const addMatch = /(add|put|include|stick|throw).*?(cart|basket|order)|add .* (to|in)/.test(low);
-    if (addMatch) {
-      return this.resolveCartAction(text, ctx, "addToCart");
-    }
-
-    // --- remove from cart ---
-    if (/(remove|take (it )?out|delete|drop|get rid of|minus)/.test(low)) {
-      return this.resolveCartAction(text, ctx, "removeFromCart");
-    }
-
-    // --- product detail ---
-    if (/(tell me (more|about)|more about|about the|details|specs|specifications|info on|show me that)/.test(low)) {
-      const id = this.resolveReferent(text, ctx.recentProductIds);
-      if (id) return this.emit("getProduct", { sessionId: ctx.sessionId, productId: id });
-      return this.productReferentQuestion();
     }
 
     // --- unclear: ask, never guess on a state-changing action ---
@@ -159,6 +179,20 @@ export class PlaceholderBrain implements Llm {
     const params: Record<string, unknown> = { sessionId: ctx.sessionId, productId: id };
     if (tool === "addToCart" && qtyMatch?.[1]) params.quantity = Number(qtyMatch[1]);
     return this.emit(tool, params);
+  }
+
+  /** Best-effort product-name from the user's own words (used only for
+   *  remove-by-name, where the user is naming what they already put in the
+   *  cart — no hallucinated ids involved). */
+  private nameFromMessage(text: string): string | null {
+    const ignored =
+      /^(remove|take|out|from|delete|drop|get|rid|of|minus|the|a|an|my|cart|please|to|in|all|just)$/i;
+    const words = text
+      .trim()
+      .split(/\s+/)
+      .map((w) => w.replace(/[^a-z0-9]+/gi, " ").trim())
+      .filter((w) => w && !ignored.test(w));
+    return words.length >= 2 ? words.join(" ") : null;
   }
 
   private resolveReferent(text: string, ids: string[]): string | null {

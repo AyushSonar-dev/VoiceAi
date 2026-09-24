@@ -59,7 +59,7 @@ test("loop reflects a backend failure truthfully (no fabricated success)", async
   await runTurn({ sessionId: sid, userText: "show me the vision 4k tv stick", llm: brain, dispatch });
   const r2 = await runTurn({ sessionId: sid, userText: "add the first one to my cart", llm: brain, dispatch });
   assert.deepEqual(toolNames(log), ["searchProducts", "addToCart"]);
-  assert.equal(((await getStore().getCart(sid)) as { items: unknown[] }).items.length, 0, "nothing was added on a failed add");
+  assert.equal(((await getStore().getOrCreateCart(sid)) as { items: unknown[] }).items.length, 0, "nothing was added on a failed add");
   assert.ok(/out of stock|outofstock/i.test(r2.reply), `reply must state the failure: "${r2.reply}"`);
   assert.ok(!r2.reply.toLowerCase().includes("added"), "must not claim the item was added");
 });
@@ -110,7 +110,7 @@ test("loop over the real HTTP tool gateway (end-to-end wiring)", async () => {
       sessionId: sid,
       userText: "find me bracelets",
       llm: brain,
-      gatewayUrl: `http://127.0.0.1:${port}/api/tools`,
+      gatewayUrl: `http://127.0.0.1:${port}`,
     });
     assert.ok(r.reply.toLowerCase().includes("option 1"));
 

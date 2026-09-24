@@ -80,10 +80,17 @@ export function applyProductFilters(products: Product[], filter: ProductFilter =
       .filter((t) => t.length);
     if (terms.length) {
       out = out.filter((p) => {
-        const haystack = [p.name, p.category, p.description, ...(p.keySpecs || [])]
+        const haystack = [p.name, p.category, p.description, ...(p.keySpecs || [])
+          .join(" ")]
           .join(" ")
           .toLowerCase();
-        return terms.every((t) => haystack.includes(t));
+        const words = haystack.split(/[^a-z0-9]+/).filter(Boolean);
+        return terms.every((t) => {
+          if (haystack.includes(t)) return true;
+          const stem = t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t;
+          if (stem.length >= 3 && haystack.includes(stem)) return true;
+          return words.some((w) => w === stem || (stem.length >= 3 && (w.startsWith(stem) || stem.startsWith(w))));
+        });
       });
     }
   }

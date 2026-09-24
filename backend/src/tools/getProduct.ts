@@ -18,7 +18,7 @@ export interface GetProductParams {
 
 export async function getProduct(params: GetProductParams): Promise<ToolResult> {
   const store = getStore();
-  const session = await requireSession(params.sessionId);
+  let session = await requireSession(params.sessionId);
 
   assertReferencable(session, params.productId);
 
@@ -27,7 +27,7 @@ export async function getProduct(params: GetProductParams): Promise<ToolResult> 
     return fail("product_not_found", "That product could not be found.");
   }
 
-  await rememberProducts(store, session, [product.id]);
+  session = await rememberProducts(store, session, [product.id]);
   await recordAction(store, session, { type: "getProduct", productId: product.id });
 
   return ok(

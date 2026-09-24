@@ -93,7 +93,8 @@ export class MemoryStore implements Store {
 
   // ---------------- carts ----------------
   async getCart(sessionId: string): Promise<Cart | null> {
-    return cartShape(this.carts.get(sessionId) ?? null);
+    const cart = this.carts.get(sessionId);
+    return cart ? cartShape(cart) : null;
   }
 
   async getOrCreateCart(sessionId: string): Promise<Cart> {
@@ -114,7 +115,7 @@ export class MemoryStore implements Store {
   // ---------------- coupons ----------------
   async findCouponByCode(code: string): Promise<Coupon | null> {
     const doc = this.coupons.find((c) => c.code.toUpperCase() === code.toUpperCase().trim());
-    return couponShape(doc!);
+    return doc ? couponShape(doc) : null;
   }
 
   // ---------------- orders ----------------
@@ -128,7 +129,7 @@ export class MemoryStore implements Store {
     const found = this.orders
       .filter((o) => o.sessionId === sessionId)
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
-    return orderShape(found!);
+    return found ? orderShape(found) : null;
   }
 
   // ---------------- stock ----------------
