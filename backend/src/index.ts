@@ -21,6 +21,18 @@ export async function startServer(opts: { port?: number } = {}): Promise<Server>
     res.json({ ok: true });
   });
 
+  // Product photos. The catalog stores root-relative paths ("/images/products/
+  // <slug>.png"), so serving this one directory is the whole requirement — no
+  // upload, no third-party CDN, and the same bytes the vision tool reads.
+  const here = path.dirname(fileURLToPath(import.meta.url));
+  app.use(
+    "/images",
+    express.static(path.resolve(here, "../public/images"), {
+      maxAge: "1h",
+      index: false,
+    })
+  );
+
   app.use("/api", sessionRouter());
   app.use("/api", toolsRouter());
   app.use("/api", stateRouter());

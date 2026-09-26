@@ -8,6 +8,7 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "seed": "tsx src/seed/run.ts",
+    "images": "tsx src/scripts/generateProductImages.ts",
     "demo": "tsx src/scripts/demo.ts",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test test/*.test.ts"

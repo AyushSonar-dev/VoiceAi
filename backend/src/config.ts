@@ -13,6 +13,12 @@ export const config = {
   port: Number(process.env.PORT || 4000),
 
   mongoUri: process.env.MONGODB_URI || "",
+  /**
+   * Production strictness. By default an unreachable MongoDB degrades to the
+   * in-memory store so the app still serves; set REQUIRE_MONGO=true to make an
+   * unreachable database a fatal boot error instead.
+   */
+  requireMongo: process.env.REQUIRE_MONGO === "true",
 
   assemblyaiKey: process.env.ASSEMBLYAI_API_KEY || "",
   assemblyaiBaseUrl: process.env.ASSEMBLYAI_BASE_URL || "https://api.assemblyai.com",
@@ -31,6 +37,16 @@ export const config = {
   openaiKey: process.env.OPENAI_API_KEY || "",
   openaiBaseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, ""),
   llmModel: process.env.LLM_MODEL || "gpt-4o-mini",
+
+  /**
+   * Visual product understanding. Uses the SAME OpenAI-compatible provider and
+   * key as the conversation brain (which is already vision-capable) — no second
+   * vendor, no second credential. Defaults to a vision-capable model so it
+   * works out of the box; override for gateways that expose another one.
+   */
+  visionModel: process.env.VISION_MODEL || "gpt-4o-mini",
+  visionTimeoutMs: Number(process.env.VISION_TIMEOUT_MS || 25000),
+  visionImageMaxBytes: Number(process.env.VISION_IMAGE_MAX_BYTES || 6_000_000),
 
   currency: process.env.CURRENCY || "\u20b9", // RUPEE SIGN
 } as const;

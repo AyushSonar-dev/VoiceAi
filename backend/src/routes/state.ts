@@ -5,6 +5,7 @@ import {
   buildCartSummary,
 } from "../tools/shared.js";
 import { config } from "../config.js";
+import { getCachedVisual } from "../vision/index.js";
 
 export interface EchoState {
   sessionId: string;
@@ -19,6 +20,10 @@ export interface EchoState {
     reviewCount: number;
     keySpecs: string[];
     inStock: boolean;
+    imageUrl: string;
+    /** Spoken description of the photo, present only after it has been analyzed
+     *  in this session. Absent means "not looked at yet" — never a guess. */
+    visualDescription?: string;
   }>;
   lastAction: unknown;
   lastOrder: unknown;
@@ -35,7 +40,18 @@ export async function buildState(sessionId: string): Promise<EchoState> {
   const recentProducts = session.recentProductIds
     .map((id) => byId.get(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p))
-    .map((p) => ({ ...p, inStock: p.stock > 0 }));
+    .map((p) => {
+      // the visual description is derived, per-session and disposable: it comes
+      // from the vision cache only, so the UI can never show a description for
+      // a photo that was not actually analyzed
+      const cached = getCachedVisual(sessionId, p.id);
+      return {
+        ...p,
+        inStock: p.stock > 0,
+        imageUrl: p.imageUrl,
+        ...(cached ? { visualDescription: cached.analysis.description } : {}),
+      };
+    });
 
   const lastOrder = await store.getLatestOrder(sessionId);
 

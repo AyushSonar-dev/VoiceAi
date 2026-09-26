@@ -60,7 +60,10 @@ export function EchoApp() {
         const s = await getState(id);
         if (!cancelled) setEchoState(s);
       } catch {
-        if (!cancelled) setLastReply("I couldn't reach the shopping service. Make sure the backend is running.");
+        if (!cancelled)
+          setLastReply(
+            "I couldn't reach the shopping service. Start it in a second terminal with `npm run dev:backend`, then reload this page."
+          );
       }
     })();
     return () => {

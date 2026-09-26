@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "workspaces": ["backend", "frontend"],
   "scripts": {
+    "dev": "node scripts/dev.mjs",
     "dev:backend": "npm run dev --workspace=backend",
     "dev:frontend": "npm run dev --workspace=frontend",
     "dev:frontend:clean": "rm -rf frontend/.next && npm run dev:frontend",

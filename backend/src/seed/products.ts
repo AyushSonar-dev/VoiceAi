@@ -1,11 +1,15 @@
 import type { Product } from "../types.js";
+import { productImageUrl } from "./productImages.js";
 
 // 40 hackathon-sized products across the 4 allowed categories.
 // A few carry stock:0 so the "offer an in-stock alternative" path is real
 // and demonstrable. Do NOT add categories — the backend enforces the enum.
 export type ProductSeed = Omit<Product, "id">;
 
-export const SEED_PRODUCTS: ProductSeed[] = [
+/** The catalog as authored; `imageUrl` is attached below for every product. */
+type ProductSeedData = Omit<ProductSeed, "imageUrl">;
+
+const PRODUCT_SEED_DATA: ProductSeedData[] = [
   // ---------------- Electronics ----------------
   {
     name: "Nova Wireless Earbuds",
@@ -414,6 +418,15 @@ export const SEED_PRODUCTS: ProductSeed[] = [
     description: "An unbelievably soft button-up cardigan in pure cashmere.",
   },
 ];
+
+// Every catalog product has its own photo, so the visual-description tool
+// always has REAL image bytes to analyze and never has to guess from the name.
+// The assets are generated once by `npm run images --workspace=backend`
+// (src/scripts/generateProductImages.ts) and committed under public/images.
+export const SEED_PRODUCTS: ProductSeed[] = PRODUCT_SEED_DATA.map((p) => ({
+  ...p,
+  imageUrl: productImageUrl(p.name),
+}));
 
 // Out-of-stock products remain visible in search results (LLM sees inStock:
 // false) and addToCart() refuses them while offering a real in-stock

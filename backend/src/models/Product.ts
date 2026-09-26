@@ -14,6 +14,8 @@ export interface ProductDoc {
   reviewCount: number;
   keySpecs: string[];
   description: string;
+  /** Store-relative path (or absolute http(s) URL) of the product photo. */
+  imageUrl: string;
 }
 
 const productSchema = new Schema<ProductDoc>(
@@ -32,6 +34,9 @@ const productSchema = new Schema<ProductDoc>(
       },
     },
     description: { type: String, required: true, trim: true },
+    // The product photo. Optional so pre-existing documents stay valid; an
+    // empty value simply means "no image available" (never guessed around).
+    imageUrl: { type: String, default: "", trim: true },
   },
   { timestamps: false, versionKey: false }
 );

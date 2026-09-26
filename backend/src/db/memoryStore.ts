@@ -51,8 +51,8 @@ export class MemoryStore implements Store {
 
   async init(): Promise<Store> {
     console.warn(
-      "[ECHOLABS] PLACEHOLDER STORE: MONGODB_URI not set — using in-memory store seeded at startup. " +
-        "Cart/orders/sessions will not persist across restarts. Set MONGODB_URI to enable MongoDB."
+      "[ECHOLABS] IN-MEMORY STORE: cart/orders/sessions will not persist across restarts. " +
+        "Set a reachable MONGODB_URI in backend/.env to enable MongoDB."
     );
     for (const p of SEED_PRODUCTS) {
       const _id = crypto.randomBytes(12).toString("hex");

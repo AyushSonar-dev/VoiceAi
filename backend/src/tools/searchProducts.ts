@@ -81,6 +81,9 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
         stock: p.stock,
         inStock: p.stock > 0,
         keySpecs: p.keySpecs,
+        // so the caller can show the photo and so the visual tool is worth
+        // calling for this option
+        imageUrl: p.imageUrl,
       })),
       searched: { category, maxPrice, minRating },
     }

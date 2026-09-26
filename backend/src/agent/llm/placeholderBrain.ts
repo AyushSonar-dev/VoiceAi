@@ -1,6 +1,7 @@
 import type { Llm, ChatRequest, ChatResponse, ToolCallRequest } from "./types.js";
 import type { ToolResult } from "../../types.js";
 import { ALLOWED_CATEGORIES, config, formatPrice } from "../../config.js";
+import { getLastDescribedProductId } from "../../vision/index.js";
 
 /**
  * PLACEHOLDER BRAIN (clearly marked).
@@ -113,6 +114,13 @@ export class PlaceholderBrain implements Llm {
       return this.productReferentQuestion();
     }
 
+    // --- what does it LOOK like: tool it, never recall it ---
+    if (this.isVisualIntent(low)) {
+      const visual = this.resolveVisualTarget(text, ctx);
+      if (visual) return this.emit("describeProductImage", visual);
+      if (ctx.recentProductIds.length) return this.productReferentQuestion();
+    }
+
     // --- search / browse ---
     if (searchIntent) {
       return this.emit("searchProducts", this.buildSearchParams(low, ctx.sessionId));
@@ -138,8 +146,47 @@ export class PlaceholderBrain implements Llm {
     };
   }
 
-  private buildSearchParams(low: string, sessionId: string): Record<string, unknown> {
-    const params: Record<string, unknown> = { sessionId, maxResults: 2 };
+  /**
+   * Does this ask about APPEARANCE rather than facts? Deliberately narrow: it
+   * keys on visual nouns (colour, pattern, sleeves, neckline, pockets, screen,
+   * stones…) and on appearance verbs ("what does it look like"), so a plain
+   * browse request like "show me some bracelets" stays a search.
+   */
+  private isVisualIntent(low: string): boolean {
+    if (/(add|remove|delete|check\s*out|checkout|coupon|apply the code)/.test(low)) return false;
+    const visualNoun =
+      /(colou?r|pattern|look|looks|appear|appearance|sleeve|sleeves|neckline|neck line|v-neck|crew neck|polo collar|collared|pocket|pockets|strap|straps|length|midi|maxi|mini|floral|stripe|striped|plaid|plain|solid|shiny|matte|satin|silk|denim|fabric|material|shape|cut|fit|drape|hem|screen|display|ports?|charging|stone|stones|gem|gems|pendant|chain)/;
+    const appearanceVerb = /(look like|looks like|how does .* look|what does .* look|describe|see it|seeing it|appearance)/;
+    return visualNoun.test(low) || appearanceVerb.test(low);
+  }
+
+  /**
+   * Which product the user means for a visual question:
+   *  - an explicit "the first one" wins,
+   *  - otherwise the product whose photo was just described ("does it have
+   *    pockets?") — productId is omitted and the tool resolves it, so a
+   *    follow-up never guesses,
+   *  - otherwise the single product already in context,
+   *  - otherwise null, and the caller asks instead of guessing.
+   */
+  private resolveVisualTarget(
+    text: string,
+    ctx: SessionContext
+  ): Record<string, unknown> | null {
+    const explicit = this.resolveReferent(text, ctx.recentProductIds);
+    if (explicit) return { sessionId: ctx.sessionId, productId: explicit };
+
+    const lastDescribed = getLastDescribedProductId(ctx.sessionId);
+    if (lastDescribed && ctx.recentProductIds.includes(lastDescribed)) {
+      return { sessionId: ctx.sessionId };
+    }
+    if (ctx.recentProductIds.length === 1) {
+      return { sessionId: ctx.sessionId, productId: ctx.recentProductIds[0] };
+    }
+    return null;
+  }
+
+  private buildSearchParams(low: string, sessionId: string): Record<string, unknown> {    const params: Record<string, unknown> = { sessionId, maxResults: 2 };
     const category = ALLOWED_CATEGORIES.find((c) => low.includes(c.toLowerCase()));
     if (category) params.category = category;
     const price = low.match(/(?:under|below|within|less than|no more than|max|budget(?: of)?)\s*(?:rupees|rs\.?|inr|\u20b9)\s*([\d,]+)/i) ??

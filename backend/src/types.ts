@@ -19,6 +19,14 @@ export interface Product {
   reviewCount: number;
   keySpecs: string[]; // max 3
   description: string;
+  /**
+   * The product's own photo — the ONLY source of image-derived facts
+   * (colour, pattern, neckline, sleeves, …). Stored as a store-relative path
+   * ("/images/products/<slug>.png"); an absolute http(s) URL also works. Empty
+   * means "no image", and the visual-description tool says so out loud instead
+   * of guessing from the name.
+   */
+  imageUrl: string;
 }
 
 export interface ProductFilter {

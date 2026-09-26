@@ -15,6 +15,12 @@ export interface InitOptions {
  * Initialize the active data store.
  * - MONGODB_URI set  -> real MongoDB (MongoStore)
  * - MONGODB_URI unset -> clearly-marked in-memory PLACEHOLDER store
+ *
+ * A configured-but-unreachable database must NOT take the whole app down: a
+ * dead tool gateway means the website cannot connect to anything at all. So we
+ * fall back to the in-memory store, say so loudly, and report `db: "memory"` via
+ * /api/capabilities. Set REQUIRE_MONGO=true where persistence is mandatory (e.g.
+ * production) to turn an unreachable database back into a hard boot failure.
  */
 export async function initStore(opts: InitOptions = {}): Promise<Store> {
   if (current) return current;
@@ -23,10 +29,31 @@ export async function initStore(opts: InitOptions = {}): Promise<Store> {
     current = new MemoryStore();
     await current.init();
     mode = "memory";
-  } else {
-    current = new MongoStore();
-    await current.init();
+    return current;
+  }
+
+  try {
+    const store = new MongoStore();
+    await store.init();
+    current = store;
     mode = "mongodb";
+  } catch (err) {
+    if (config.requireMongo) throw err;
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(
+      [
+        "",
+        "[ECHOLABS] MongoDB is UNREACHABLE — falling back to the in-memory store.",
+        `          ${reason.split("\n")[0]}`,
+        "          The app works, but nothing is persisted until this is fixed:",
+        "          check MONGODB_URI in backend/.env (and that the IP allowlist includes this machine).",
+        "          Set REQUIRE_MONGO=true to make this a fatal error instead.",
+        "",
+      ].join("\n")
+    );
+    current = new MemoryStore();
+    await current.init();
+    mode = "memory";
   }
   return current;
 }

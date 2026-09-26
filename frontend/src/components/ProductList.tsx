@@ -45,6 +45,12 @@ export function ProductList({ products, currency, busy, onAdd }: Props) {
                 <li key={spec}>{spec}</li>
               ))}
             </ul>
+            {p.visualDescription ? (
+              <p className="visual" style={{ margin: "0 0 8px" }}>
+                <span style={{ color: "var(--muted)" }}>Looks like: </span>
+                {p.visualDescription}
+              </p>
+            ) : null}
             {p.inStock ? (
               <button
                 type="button"

@@ -5,6 +5,7 @@ import { removeFromCart, type RemoveFromCartParams } from "./removeFromCart.js";
 import { getCart, type GetCartParams } from "./getCart.js";
 import { applyCoupon, type ApplyCouponParams } from "./applyCoupon.js";
 import { checkout, type CheckoutParams } from "./checkout.js";
+import { describeProductImage, type DescribeProductImageParams } from "./describeProductImage.js";
 import { ToolError } from "./shared.js";
 import type { ToolResult } from "../types.js";
 
@@ -27,6 +28,7 @@ export const TOOL_REGISTRY: Record<string, ToolHandler> = {
   getCart: getCart,
   applyCoupon: applyCoupon,
   checkout: checkout,
+  describeProductImage: describeProductImage,
 };
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -149,6 +151,25 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "describeProductImage",
+      description:
+        "Look at a product's actual photo and describe ONLY what is visible in it (colour, pattern, cut, neckline, sleeves, length, screen, ports, stones…). Call this when the user asks what it looks like, its colour, whether it has pockets/short sleeves/a screen, or anything else that needs seeing rather than reading. productId must be one the user was handed this session. Never answer a visual question from the name, description or specs, and never guess: if the photo cannot be read the tool says so. Results are cached per session, so follow-ups ('does it have pockets?') cost nothing extra.",
+      parameters: {
+        type: "object",
+        properties: {
+          sessionId: { type: "string", description: "The current conversation sessionId." },
+          productId: {
+            type: "string",
+            description: "A productId returned by a tool earlier in this session. Omit only when the user is plainly asking about the single product just described visually.",
+          },
+        },
+        required: ["sessionId"],
+      },
+    },
+  },
 ];
 
 /**
@@ -194,6 +215,7 @@ export const VOICE_AGENT_TOOL_NAME_MAP: Record<string, string> = {
   get_cart: "getCart",
   apply_coupon: "applyCoupon",
   checkout: "checkout",
+  describe_product_image: "describeProductImage",
 };
 
 type VoiceAgentToolDefinition = {
@@ -283,6 +305,14 @@ export const VOICE_AGENT_TOOL_DEFINITIONS: VoiceAgentToolDefinition[] = [
     },
     []
   ),
+  voaTool(
+    "describe_product_image",
+    "Look at a product's real photo and report only what is visible (colour, pattern, cut, neckline, sleeves, length, screen, ports, stones). Call this whenever the user asks what something looks like, what colour it is, or whether it has a visible feature such as pockets, short sleeves or a screen. productId must come from a previous tool result this session. NEVER answer a visual question from the product name or specs, and never guess — if the photo cannot be read, the tool says so. Follow-ups ('does it have pockets?') are answered from the same photo at no extra cost.",
+    {
+      productId: { type: "string", description: "A productId returned by a tool earlier in this session. Omit only when the user is plainly asking about the single product just described." },
+    },
+    []
+  ),
 ];
 
 export {
@@ -293,6 +323,7 @@ export {
   getCart,
   applyCoupon,
   checkout,
+  describeProductImage,
 };
 export type {
   SearchProductsParams,
@@ -302,4 +333,5 @@ export type {
   GetCartParams,
   ApplyCouponParams,
   CheckoutParams,
+  DescribeProductImageParams,
 };

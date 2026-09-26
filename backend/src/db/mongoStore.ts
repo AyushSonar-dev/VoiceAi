@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { config } from "../config.js";
 import { Product as ProductModel, type ProductDoc } from "../models/Product.js";
 import { Cart as CartModel } from "../models/Cart.js";
 import { Coupon as CouponModel } from "../models/Coupon.js";
@@ -21,9 +22,17 @@ const toStr = (v: unknown): string => String(v);
 export class MongoStore implements Store {
   async init(): Promise<Store> {
     const uri = configUri();
-    await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
-    await this.seedIfEmpty();
-    return this;
+    try {
+      await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
+      await this.seedIfEmpty();
+      await this.backfillProductImages();
+      return this;
+    } catch (err) {
+      // Never leave a half-open connection behind for the caller to trip over
+      // if the database is unreachable: let the store factory decide what to do.
+      await mongoose.disconnect().catch(() => {});
+      throw err;
+    }
   }
 
   async reset(): Promise<Store> {
@@ -46,6 +55,27 @@ export class MongoStore implements Store {
   }
 
   // ---------------- products ----------------
+  /**
+   * Catalogs seeded before product images existed still load fine (imageUrl
+   * defaults to ""), so fill the path in on boot instead of asking anyone to
+   * re-seed. Only documents that are missing it are touched.
+   */
+  private async backfillProductImages(): Promise<void> {
+    const noImage = { $or: [{ imageUrl: { $exists: false } }, { imageUrl: "" }] };
+    const stale = await ProductModel.find(noImage, { name: 1, imageUrl: 1 }).lean();
+    if (!stale.length) return;
+    const names = new Set(stale.map((d) => d.name));
+    const ops = SEED_PRODUCTS.filter((p) => names.has(p.name)).map((seed) => ({
+      updateOne: {
+        filter: { name: seed.name, ...noImage },
+        update: { $set: { imageUrl: seed.imageUrl } },
+      },
+    }));
+    if (!ops.length) return;
+    const res = await ProductModel.bulkWrite(ops, { ordered: false });
+    console.log(`[ECHOLABS] Attached product image paths to ${res.modifiedCount} existing product(s).`);
+  }
+
   async searchProducts(filter: ProductFilter): Promise<Product[]> {
     const query: Record<string, unknown> = {};
     if (filter.category) query.category = filter.category;
@@ -156,7 +186,9 @@ export class MongoStore implements Store {
 }
 
 function configUri(): string {
-  const uri = process.env.MONGODB_URI;
+  // Single source of truth: db/index.ts selects this store based on the same
+  // config value, so the two can never disagree about which database is in use.
+  const uri = config.mongoUri;
   if (!uri) throw new Error("MongoStore requires MONGODB_URI — see db/index.ts before selecting MongoStore.");
   return uri;
 }

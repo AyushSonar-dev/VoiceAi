@@ -8,6 +8,10 @@ export interface RecentProduct {
   reviewCount: number;
   keySpecs: string[];
   inStock: boolean;
+  imageUrl: string;
+  /** Only present once Echo has actually looked at this product's photo. The UI
+   *  shows it as text; it is never a guess at what the product looks like. */
+  visualDescription?: string;
 }
 
 export interface CartLine {

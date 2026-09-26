@@ -1,8 +1,22 @@
 import type { Capabilities, EchoState, SseEvent, ToolResult, TurnEvents, VoiceAgentSetup } from "@/types";
 
 async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, init);
-  if (!res.ok) throw new Error(`request to ${url} failed with ${res.status}`);
+  let res: Response;
+  try {
+    res = await fetch(url, init);
+  } catch {
+    // The request never left Next: usually the dev server itself is not up.
+    throw new Error(`the site could not reach its own server (${url})`);
+  }
+  if (!res.ok) {
+    // 5xx from a rewritten /api/* route means Next tried the backend and the
+    // backend did not answer — the single most common "it won't connect" cause.
+    throw new Error(
+      res.status >= 500
+        ? `the backend did not answer (HTTP ${res.status}) — is it running on the configured port?`
+        : `request to ${url} failed with ${res.status}`
+    );
+  }
   return res.json() as Promise<T>;
 }
 

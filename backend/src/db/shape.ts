@@ -11,6 +11,7 @@ export function productShape(doc: ProductDoc): Product {
     reviewCount: doc.reviewCount,
     keySpecs: Array.isArray(doc.keySpecs) ? doc.keySpecs : [],
     description: doc.description,
+    imageUrl: typeof doc.imageUrl === "string" ? doc.imageUrl : "",
   };
 }
 

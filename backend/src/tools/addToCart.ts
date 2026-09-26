@@ -51,7 +51,7 @@ export async function addToCart(params: AddToCartParams): Promise<ToolResult> {
       return fail(
         "out_of_stock",
         `${product.name} is out of stock right now. Instead, I can offer ${alternative.name} from the same category — ${formatPrice(alternative.price)}, rated ${alternative.rating} stars from ${alternative.reviewCount} reviews, in stock. Want me to add it?`,
-        { productId: product.id, alternative: { id: alternative.id, name: alternative.name, price: alternative.price, rating: alternative.rating, reviewCount: alternative.reviewCount, stock: alternative.stock, keySpecs: alternative.keySpecs } }
+        { productId: product.id, alternative: { id: alternative.id, name: alternative.name, price: alternative.price, rating: alternative.rating, reviewCount: alternative.reviewCount, stock: alternative.stock, keySpecs: alternative.keySpecs, imageUrl: alternative.imageUrl } }
       );
     }
     return fail(
