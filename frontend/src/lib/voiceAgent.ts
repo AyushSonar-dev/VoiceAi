@@ -20,15 +20,40 @@ interface ToolInvocation {
   args: Record<string, unknown>;
 }
 
+/**
+ * How a partial transcript must be combined with what is already on screen.
+ * AssemblyAI's two streaming events differ: `transcript.user.delta` resends the
+ * whole utterance so far (cumulative), while `transcript.agent.delta` sends only
+ * the newly spoken words (incremental). Exposing that distinction in the type
+ * makes it impossible for a caller to render "H He Hel Hello" by accident.
+ */
+export type TranscriptPart = "cumulative" | "incremental";
+
 export interface VoiceAgentEvents {
   onStatus?: (status: AgentStatus) => void;
-  onUserTranscript?: (text: string, final: boolean) => void;
-  onAgentTranscript?: (text: string, final: boolean, interrupted: boolean) => void;
+  /** `mode` says how to combine `text` with the previous partial. */
+  onUserTranscript?: (text: string, final: boolean, mode: TranscriptPart) => void;
+  onAgentTranscript?: (
+    text: string,
+    final: boolean,
+    interrupted: boolean,
+    mode: TranscriptPart
+  ) => void;
+  /** fired when the server starts a fresh user turn, so partials can be sealed */
+  onUserTurnStart?: () => void;
   /** fired after a tool has been executed and its result is being sent back */
   onToolCall?: (info: { name: string; args: Record<string, unknown>; result: ToolResult }) => void;
   /** interrupted=true when the user barged in and cut the reply short */
   onReplyDone?: (opts: { interrupted: boolean; sentToolResult: boolean }) => void;
   onError?: (message: string) => void;
+  /**
+   * Measured audio level 0..1, tagged with where it came from. "in" is the
+   * user's microphone, "out" is the agent's own voice. Both are real RMS
+   * readings — the interface must never invent a level when audio is silent.
+   */
+  onAudioLevel?: (level: number, source: "in" | "out") => void;
+  /** true while the agent's voice is actually being produced/played */
+  onSpeakingChange?: (speaking: boolean) => void;
 }
 
 const WS_URL = "wss://agents.assemblyai.com/v1/ws";
@@ -51,6 +76,7 @@ export class VoiceAgentSession {
   private pendingTools: Map<string, ToolInvocation> = new Map();
   private connecting: Promise<void> | null = null;
   private status: AgentStatus | null = null;
+  private speaking = false;
 
   constructor(
     private setup: VoiceAgentSetup,
@@ -137,12 +163,16 @@ export class VoiceAgentSession {
     mic.setOnPcm((b64) => {
       if (this.isReady) this.ws?.send(JSON.stringify({ type: "input.audio", audio: b64 }));
     });
+    mic.setOnLevel((level) => {
+      if (!this.closed) this.events.onAudioLevel?.(level, "in");
+    });
   }
 
   /** Stop the microphone but keep the session open for typed input. */
   stopMic(): void {
     this.captured?.mic.stop();
     this.captured = null;
+    this.events.onAudioLevel?.(0, "in");
   }
 
   /** End the call cleanly: session.end -> session.ended -> close. */
@@ -162,7 +192,11 @@ export class VoiceAgentSession {
       const ctx = new AudioContext();
       if (ctx.state === "suspended") void ctx.resume();
       this.playerCtx = ctx;
-      this.player = createPlayer(ctx);
+      this.player = createPlayer(ctx, {
+        onLevel: (level) => {
+          if (!this.closed) this.events.onAudioLevel?.(level, "out");
+        },
+      });
     }
     return this.player;
   }
@@ -175,6 +209,15 @@ export class VoiceAgentSession {
       this.playerCtx = null;
       this.player = null;
     }
+    this.events.onAudioLevel?.(0, "in");
+    this.events.onAudioLevel?.(0, "out");
+    this.setSpeaking(false);
+  }
+
+  private setSpeaking(speaking: boolean): void {
+    if (this.speaking === speaking) return;
+    this.speaking = speaking;
+    this.events.onSpeakingChange?.(speaking);
   }
 
   private handleRaw(raw: unknown): void {
@@ -190,14 +233,18 @@ export class VoiceAgentSession {
         break;
       case "input.speech.started":
         this.pendingTools.clear();
+        // A new turn begins, so any still-streaming bubble is now final.
+        this.events.onUserTurnStart?.();
         this.setStatus("listening");
         break;
       case "transcript.user.delta":
-        this.events.onUserTranscript?.(String(msg.text), false);
+        // Cumulative: each event is the whole utterance so far, so it replaces
+        // the previous partial rather than adding to it.
+        this.events.onUserTranscript?.(String(msg.text ?? msg.delta ?? ""), false, "cumulative");
         break;
       case "transcript.user":
         this.setStatus("thinking");
-        this.events.onUserTranscript?.(String(msg.text), true);
+        this.events.onUserTranscript?.(String(msg.text), true, "cumulative");
         break;
       case "reply.started":
         this.player?.flush();
@@ -205,12 +252,20 @@ export class VoiceAgentSession {
         break;
       case "reply.audio":
         this.ensurePlayer().play(String(msg.data));
+        this.setSpeaking(true);
         break;
       case "transcript.agent.delta":
-        this.events.onAgentTranscript?.(String(msg.delta), false, false);
+        // Incremental: only the words just spoken, so they append.
+        this.events.onAgentTranscript?.(
+          String(msg.delta ?? msg.text ?? ""),
+          false,
+          false,
+          "incremental"
+        );
         break;
       case "transcript.agent":
-        this.events.onAgentTranscript?.(String(msg.text), true, Boolean(msg.interrupted));
+        this.setSpeaking(true);
+        this.events.onAgentTranscript?.(String(msg.text), true, Boolean(msg.interrupted), "cumulative");
         break;
       case "tool.call": {
         const inv: ToolInvocation = {
@@ -223,6 +278,7 @@ export class VoiceAgentSession {
       }
       case "reply.done": {
         const interrupted = msg.status !== "completed";
+        this.setSpeaking(false);
         if (!interrupted && this.pendingTools.size > 0) {
           this.setStatus("thinking");
           this.events.onReplyDone?.({ interrupted: false, sentToolResult: false });

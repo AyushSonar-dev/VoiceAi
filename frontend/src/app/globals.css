@@ -1,262 +1,1163 @@
+/* ==========================================================================
+   Echo — visual system
+   A near-black, high-contrast, voice-first interface. One restrained accent.
+   Layout is token-driven so the magnifier can rescale it without overlap.
+   ========================================================================== */
+
 :root {
-  --bg: #f8fafc;
+  /* Surfaces: near-black, layered by lightness rather than by colour. */
+  --bg: #08090b;
+  --bg-deep: #050607;
+  --surface: #101216;
+  --surface-2: #171a20;
+  --surface-3: #1f232b;
+  --line: #2a2f38;
+  --line-strong: #3a4150;
+
+  /* Text: WCAG AAA on --bg for the primary tone. */
+  --text: #f4f6f8;
+  --text-soft: #c3c9d2;
+  --muted: #8b93a1;
+
+  /* One accent, used sparingly. */
+  --accent: #e8e2d5;
+  --accent-ink: #08090b;
+  --accent-soft: rgba(232, 226, 213, 0.14);
+  --live: #7fd1ae;
+  --warn: #e9b872;
+  --danger: #f09a8c;
+
+  --radius-sm: 0.5rem;
+  --radius: 0.875rem;
+  --radius-lg: 1.5rem;
+  --radius-pill: 999px;
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-7: 3rem;
+  --space-8: 4rem;
+
+  --focus: #f5d68a;
+  --shadow-lift: 0 1px 2px rgba(0, 0, 0, 0.6), 0 12px 32px rgba(0, 0, 0, 0.45);
+
+  --content-scale: 1;
+  --tap: 2.75rem; /* minimum comfortable touch target */
+}
+
+/* Light theme is retained as a genuine high-contrast option, not an afterthought. */
+:root[data-theme="light"] {
+  --bg: #f6f5f2;
+  --bg-deep: #eceae5;
   --surface: #ffffff;
-  --surface-2: #f1f5f9;
-  --text: #0f172a;
-  --muted: #475569;
-  --accent: #0ea5e9;
+  --surface-2: #f2f1ee;
+  --surface-3: #e7e5e0;
+  --line: #d3d0c9;
+  --line-strong: #a8a49b;
+  --text: #12100e;
+  --text-soft: #35322d;
+  --muted: #5d594f;
+  --accent: #1a1714;
   --accent-ink: #ffffff;
-  --danger: #dc2626;
-  --ok: #16a34a;
-  --border: #cbd5e1;
-  --radius: 12px;
-  --focus: #f59e0b;
+  --accent-soft: rgba(26, 23, 20, 0.09);
+  --live: #1c6b4a;
+  --warn: #8a5a12;
+  --danger: #a33322;
+  --focus: #7a4b00;
+  --shadow-lift: 0 1px 2px rgba(0, 0, 0, 0.08), 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
-:root[data-theme="dark"] {
-  --bg: #0f172a;
-  --surface: #1e293b;
-  --surface-2: #334155;
-  --text: #f1f5f9;
-  --muted: #cbd5e1;
-  --accent: #38bdf8;
-  --accent-ink: #082f49;
-  --border: #475569;
-}
-
-* {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
 html {
   font-size: 100%;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
   margin: 0;
+  min-height: 100dvh;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  line-height: 1.55;
+  font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-.app-shell {
-  max-width: 980px;
-  margin: 0 auto;
-  padding: 1rem clamp(0.75rem, 4vw, 2rem) 4rem;
-  display: grid;
-  gap: 1.25rem;
+/* A single, restrained wash behind everything — not a gradient showcase. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.05), transparent 60%);
 }
 
-.topbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-h1 {
-  margin: 0;
-  font-size: clamp(1.4rem, 4vw, 2rem);
-}
-
-.card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 1rem;
-}
-
-.card h2 {
-  margin: 0 0 0.75rem;
-  font-size: 1.1rem;
-}
-
-.live-region {
-  border-left: 4px solid var(--accent);
-  padding: 0.6rem 0.9rem;
-  background: var(--surface-2);
-  border-radius: 8px;
-  min-height: 3rem;
-}
-
-.sr-status {
-  margin: 0;
-}
-
-.products {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
-  gap: 0.9rem;
-}
-
-.product-card {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 0.9rem;
-  display: grid;
-  gap: 0.4rem;
-}
-
-.product-card h3 {
-  margin: 0;
-  font-size: 1.02rem;
-}
-
-.product-card .category {
-  color: var(--muted);
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.product-card .price {
-  font-weight: 700;
-  font-size: 1.05rem;
-}
-
-.product-card .specs {
-  margin: 0;
-  padding-left: 1.1rem;
-  color: var(--muted);
-  font-size: 0.9rem;
-}
-
-.product-card .outOfStock {
-  color: var(--danger);
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-
-.stars {
-  color: var(--ok);
-}
-
-.cart-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1rem;
-  align-items: baseline;
-  justify-content: space-between;
-  padding: 0.5rem 0;
-  border-top: 1px solid var(--border);
-}
-
-.cart-totals {
-  border-top: 2px solid var(--border);
-  margin-top: 0.5rem;
-  padding-top: 0.75rem;
-  display: grid;
-  gap: 0.25rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.spread {
-  justify-content: space-between;
-}
-
-.gallery {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
-  align-items: center;
+:root[data-theme="light"] body::before {
+  background: radial-gradient(120% 80% at 50% -10%, rgba(0, 0, 0, 0.05), transparent 60%);
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
+  color: inherit;
 }
+
+/* Visible focus everywhere, on a dark ground. */
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 3px;
+  border-radius: var(--radius-sm);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-3);
+  top: -4rem;
+  z-index: 100;
+  padding: var(--space-3) var(--space-4);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border-radius: var(--radius);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+
+.skip-link:focus {
+  top: var(--space-3);
+}
+
+/* ---------------------------------------------------------------- app frame */
+
+.app {
+  position: relative;
+  z-index: 1;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4) clamp(var(--space-4), 4vw, var(--space-7));
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.brand__mark {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.brand__meta {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.app__content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The magnifier scales the content region. `zoom` re-runs layout, so nothing
+   overlaps, nothing is clipped and no horizontal scrollbar appears — which is
+   why it is used instead of `transform: scale`. It applies at every width, so
+   the control behaves identically on a phone and a desktop. */
+@supports (zoom: 1.5) {
+  .zoom-region {
+    zoom: var(--content-scale);
+  }
+}
+
+/* Narrow/older browsers without `zoom`: scale text and the media sizes instead,
+   which still enlarges the reading experience without breaking the layout. */
+@supports not (zoom: 1.5) {
+  .zoom-region {
+    font-size: calc(1rem * var(--content-scale));
+  }
+  .zoom-region .product-card__figure {
+    height: calc(14rem * var(--content-scale));
+  }
+  .zoom-region .connect__title {
+    font-size: calc(clamp(2rem, 7vw, 3.75rem) * var(--content-scale));
+  }
+}
+
+.app__inner {
+  width: 100%;
+  max-width: 78rem;
+  margin: 0 auto;
+  padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.app__foot {
+  padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-7);
+  max-width: 78rem;
+  margin: 0 auto;
+  width: 100%;
+  color: var(--muted);
+  font-size: 0.8rem;
+  border-top: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------- typography */
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+}
+
+.section-title {
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: var(--space-3);
+}
+
+/* ---------------------------------------------------------------- surfaces */
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  padding: clamp(var(--space-4), 2.5vw, var(--space-6));
+}
+
+.panel--flush {
+  padding: 0;
+  overflow: hidden;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+/* ----------------------------------------------------------------- buttons */
 
 .btn {
   appearance: none;
-  border: 1px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: var(--tap);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--line-strong);
   background: var(--surface-2);
   color: var(--text);
-  border-radius: 999px;
-  padding: 0.45rem 0.95rem;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
 }
 
-.btn.primary {
+.btn:hover:not([disabled]) {
+  background: var(--surface-3);
+  border-color: var(--muted);
+}
+
+.btn:active:not([disabled]) {
+  transform: translateY(1px);
+}
+
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn--primary {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
   font-weight: 600;
 }
 
-.btn.danger {
+.btn--primary:hover:not([disabled]) {
+  background: var(--text);
+  border-color: var(--text);
+}
+
+.btn--quiet {
   background: transparent;
-  border-color: var(--danger);
+  border-color: var(--line);
+  color: var(--text-soft);
+}
+
+.btn--danger {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
   color: var(--danger);
 }
 
-.btn[disabled] {
-  opacity: 0.5;
-  cursor: not-allowed;
+.btn--block {
+  width: 100%;
 }
 
-.micBtn {
-  border-radius: 50%;
-  width: 52px;
-  height: 52px;
-  font-size: 1.3rem;
-  line-height: 1;
-  display: inline-grid;
-  place-items: center;
+/* Segmented control, used for contrast / magnification / motion. */
+.segmented {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
 }
 
-.micBtn.recording {
-  background: var(--danger);
-  border-color: var(--danger);
-  color: #fff;
-  animation: pulse 1.2s ease-out infinite;
+.segmented__option {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-pill);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
 }
 
-@keyframes pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.45);
-  }
-  100% {
-    box-shadow: 0 0 0 14px rgba(220, 38, 38, 0);
-  }
-}
-
-input[type="text"] {
-  flex: 1;
-  min-width: 0;
-  padding: 0.55rem 0.8rem;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  background: var(--surface);
+.segmented__option:hover {
   color: var(--text);
 }
 
-.transcript {
+.segmented__option[aria-pressed="true"],
+.segmented__option[aria-checked="true"] {
+  background: var(--surface-3);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+
+/* ------------------------------------------------------------------ fields */
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.field__label {
+  font-size: 0.8rem;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+}
+
+input[type="text"],
+input[type="search"] {
+  width: 100%;
+  min-height: var(--tap);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+}
+
+input[type="text"]::placeholder {
+  color: var(--muted);
+}
+
+input[type="range"] {
+  width: 100%;
+  min-height: var(--tap);
+  accent-color: var(--accent);
+  background: transparent;
+}
+
+/* ------------------------------------------------- pre-connection landing */
+
+/* The landing fills the viewport, so the magnifier applies to it directly
+   rather than through the scrolling content column. */
+.connect-region {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
+.connect {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-5);
+  padding: var(--space-7) var(--space-4) var(--space-8);
+  min-height: calc(100dvh - 16rem);
+}
+
+.connect__title {
+  font-size: clamp(2rem, 7vw, 3.75rem);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  max-width: 18ch;
+}
+
+.connect__lede {
+  color: var(--text-soft);
+  font-size: clamp(1rem, 2.2vw, 1.2rem);
+  max-width: 42ch;
+  margin: 0;
+}
+
+.connect__action {
+  margin-top: var(--space-2);
+}
+
+.connect__button {
+  min-height: 4.5rem;
+  padding: var(--space-4) var(--space-7);
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  border: 1px solid var(--accent);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-3);
+  cursor: pointer;
+  box-shadow: var(--shadow-lift);
+  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.connect__button:hover:not([disabled]) {
+  background: var(--text);
+  transform: translateY(-2px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 18px 44px rgba(0, 0, 0, 0.55);
+}
+
+.connect__button:active:not([disabled]) {
+  transform: translateY(0);
+}
+
+.connect__hint {
   color: var(--muted);
   font-size: 0.85rem;
-  font-style: italic;
+  max-width: 40ch;
+  margin: 0;
 }
 
-.controls {
+.connect__note {
+  color: var(--muted);
+  font-size: 0.8rem;
+  margin: 0;
+  max-width: 52ch;
+}
+
+/* --------------------------------------------------------------- agent orb */
+
+.agent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+}
+
+.agent__stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+}
+
+.agent__orb {
+  display: block;
+  /* The canvas is decorative; the state is always also given as text. */
+  border-radius: 50%;
+  opacity: 0.96;
+}
+
+.agent__state {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.agent__label {
+  margin: 0;
+  font-size: clamp(1.15rem, 2.6vw, 1.5rem);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  min-height: 1.6em;
+}
+
+/* The label colour reinforces the phase for anyone who can see it, but the
+   phase is never encoded by colour alone — the words are always present, and
+   the orb is purely decorative. */
+.agent__label[data-phase="error"] {
+  color: var(--danger);
+}
+
+.agent__label[data-phase="speaking"] {
+  color: var(--accent);
+}
+
+.agent__label[data-phase="listening"] {
+  color: var(--live);
+}
+
+.agent__detail {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  min-height: 1.4em;
+}
+
+/* -------------------------------------------------------------- transcript */
+
+.transcript {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: min(38vh, 26rem);
+  overflow-y: auto;
+  padding: var(--space-4);
+  scrollbar-width: thin;
+}
+
+.turn {
+  display: grid;
+  gap: var(--space-1);
+  max-width: 46rem;
+}
+
+.turn--user {
+  justify-self: end;
+  text-align: right;
+}
+
+.turn__who {
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.turn--agent .turn__who {
+  color: var(--accent);
+}
+
+.turn__text {
+  margin: 0;
+  font-size: 1.02rem;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.turn--user .turn__text {
+  color: var(--text-soft);
+}
+
+.turn--agent .turn__text {
+  font-size: 1.15rem;
+}
+
+.turn__text[data-partial="true"]::after {
+  content: "";
+  display: inline-block;
+  width: 0.5ch;
+  height: 1.05em;
+  margin-left: 0.15em;
+  vertical-align: -0.15em;
+  background: currentColor;
+  animation: caret 1.1s steps(2, start) infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+
+.turn__flag {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.transcript__empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+/* ---------------------------------------------------------------- products */
+
+.results__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.product-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  height: 100%;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.product-card:hover,
+.product-card:focus-within {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-lift);
+}
+
+.product-card__figure {
+  position: relative;
+  margin: 0;
+  height: 14rem;
+  background: var(--bg-deep);
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.product-card__image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.product-card__image--missing {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.product-card__tag {
+  position: absolute;
+  top: var(--space-3);
+  left: var(--space-3);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  background: color-mix(in srgb, var(--bg-deep) 78%, transparent);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.6rem;
+}
+
+.product-card__body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  flex: 1;
+}
+
+.product-card__name {
+  font-size: 1.05rem;
+  font-weight: 500;
+}
+
+.product-card__price {
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.product-card__rating {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.product-card__rating-star {
+  color: var(--warn);
+}
+
+.product-card__specs {
+  margin: 0;
+  padding: 0;
+  list-style: none;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.6rem;
+  gap: var(--space-1) var(--space-2);
+}
+
+.product-card__specs li {
+  font-size: 0.75rem;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 0.1rem 0.45rem;
+}
+
+.product-card__visual {
+  margin: 0;
+  font-size: 0.88rem;
+  color: var(--text-soft);
+  border-left: 2px solid var(--accent);
+  padding-left: var(--space-3);
+}
+
+.product-card__visual strong {
+  display: block;
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 600;
+  margin-bottom: 0.15rem;
+}
+
+.product-card__foot {
+  margin-top: auto;
+  padding-top: var(--space-3);
+}
+
+.product-card__oos {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.85rem;
+}
+
+/* The card the agent is talking about right now. */
+.product-card--speaking {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.product-card--speaking .product-card__figure::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--accent);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* -------------------------------------------------------------------- cart */
+
+.cart-lines {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cart-line {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--line);
 }
 
-:focus-visible {
-  outline: 3px solid var(--focus);
-  outline-offset: 2px;
+.cart-line__name {
+  font-weight: 500;
 }
 
+.cart-totals {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+  font-variant-numeric: tabular-nums;
+}
+
+.cart-totals__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  color: var(--text-soft);
+}
+
+.cart-totals__row--total {
+  color: var(--text);
+  font-weight: 600;
+  font-size: 1.05rem;
+  border-top: 1px solid var(--line-strong);
+  padding-top: var(--space-3);
+  margin-top: var(--space-1);
+}
+
+.cart-totals__row--discount {
+  color: var(--live);
+}
+
+.form-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.form-row .field {
+  flex: 1 1 12rem;
+}
+
+/* ---------------------------------------------------------------- controls */
+
+.controls {
+  margin: 0;
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.controls__summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  cursor: pointer;
+  list-style: none;
+  min-height: var(--tap);
+}
+
+.controls__summary::-webkit-details-marker {
+  display: none;
+}
+
+.controls__summary::after {
+  content: "▾";
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.controls[open] > .controls__summary::after {
+  content: "▴";
+}
+
+.controls__summary:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+
+.controls__summary-label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-soft);
+  white-space: nowrap;
+}
+
+/* The collapsed summary still reports the live values, so a setting is never
+   invisible — the user does not have to open the panel to know it applied. */
+.controls__summary-values {
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.controls__body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-4) var(--space-5);
+  padding-top: var(--space-4);
+}
+
+.control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  border: 0;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.control--range {
+  min-width: 9rem;
+}
+
+.control__legend,
+.control__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0;
+}
+
+.control__value {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+}
+
+.control__value--warn {
+  color: var(--warn);
+}
+
+/* ------------------------------------------------------------- voice panel */
+
+.voice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.voice__row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.mic {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+
+.mic:hover:not([disabled]) {
+  background: var(--surface-3);
+  border-color: var(--muted);
+}
+
+.mic[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.mic[data-active="true"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+}
+
+.mic__ring {
+  position: absolute;
+  inset: -0.4rem;
+  border-radius: 50%;
+  border: 1px solid var(--accent);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.mic[data-active="true"] .mic__ring {
+  animation: ring 2.4s ease-out infinite;
+}
+
+@keyframes ring {
+  0% {
+    opacity: 0.5;
+    transform: scale(0.9);
+  }
+  70%,
+  100% {
+    opacity: 0;
+    transform: scale(1.25);
+  }
+}
+
+.voice__status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.voice__status-main {
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.voice__status-sub {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.voice__form {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.voice__form input {
+  flex: 1;
+}
+
+.notice {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.notice--error {
+  border-left-color: var(--danger);
+}
+
+.notice--good {
+  border-left-color: var(--live);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  padding: 0.15rem 0.55rem;
+}
+
+.badge--live {
+  color: var(--live);
+  border-color: color-mix(in srgb, var(--live) 40%, transparent);
+}
+
+.dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  flex: 0 0 auto;
+}
+
+.dot--pulse {
+  animation: dot 1.6s ease-in-out infinite;
+}
+
+@keyframes dot {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+/* --------------------------------------------------------------- utilities */
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.grid-2 {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 64rem) {
+  .grid-2 {
+    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+    align-items: start;
+  }
+}
+
+.checkout-confirm {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+}
+
+/* --------------------------------------------------------- reduced motion */
+
+/* The application setting (data-reduced-motion="on") and the OS setting both
+   apply. The orb additionally stops animating via JavaScript. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -264,5 +1165,68 @@ input[type="text"] {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+:root[data-reduced-motion="on"] *,
+:root[data-reduced-motion="on"] *::before,
+:root[data-reduced-motion="on"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}
+
+/* Under reduced motion, hover/focus must still be obvious — it just cannot
+   animate. */
+.btn:hover:not([disabled]),
+.product-card:hover {
+  transition: none;
+}
+
+/* ------------------------------------------------------------------ mobile */
+
+@media (max-width: 40rem) {
+  :root {
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+  }
+
+  .app__inner {
+    padding-top: var(--space-4);
+    gap: var(--space-4);
+  }
+
+  .transcript {
+    max-height: none;
+  }
+
+  .product-card__figure {
+    height: 12rem;
+  }
+
+  .controls__body {
+    gap: var(--space-3);
+  }
+
+  .connect__button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+/* Forced-colors / high-contrast mode: let the OS palette win, but keep the
+   structure and the focus ring obvious. */
+@media (forced-colors: active) {
+  .btn,
+  .panel,
+  .product-card,
+  .turn__text {
+    border: 1px solid CanvasText;
+  }
+
+  :focus-visible {
+    outline: 3px solid Highlight;
   }
 }

@@ -1,72 +1,55 @@
 "use client";
 
+import { AnimatePresence, motion } from "framer-motion";
 import type { RecentProduct } from "@/types";
+import { ProductCard } from "./ProductCard";
 
 interface Props {
   products: RecentProduct[];
   currency: string;
   busy: boolean;
+  reducedMotion: boolean;
+  /** id of the product Echo is describing right now, if any */
+  spotlightId: string | null;
   onAdd: (optionIndex: number) => void;
 }
 
-const ORDINALS = ["first", "second", "third", "fourth", "fifth"];
-
-export function ProductList({ products, currency, busy, onAdd }: Props) {
-  if (products.length === 0) {
-    return (
-      <section className="card" aria-labelledby="products-heading">
-        <h2 id="products-heading">Your options</h2>
-        <p style={{ margin: 0, color: "var(--muted)" }}>
-          Nothing yet — ask for something like “show me jewelry under 2000”.
-        </p>
-      </section>
-    );
-  }
-
-  const money = (n: number) => `${currency}${n.toLocaleString("en-IN")}`;
+export function ProductList({
+  products,
+  currency,
+  busy,
+  reducedMotion,
+  spotlightId,
+  onAdd,
+}: Props) {
+  if (products.length === 0) return null;
 
   return (
-    <section className="card" aria-labelledby="products-heading">
-      <h2 id="products-heading">Your options</h2>
-      <ul className="products" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-        {products.map((p, index) => (
-          <li key={p.id} className="product-card">
-            <span className="category">
-              {p.category} · Option {index + 1}
-            </span>
-            <h3>{p.name}</h3>
-            <span className="price">{money(p.price)}</span>
-            <span className="stars" aria-label={`Rated ${p.rating} out of 5 from ${p.reviewCount} reviews`}>
-              ★ {p.rating.toFixed(1)}{" "}
-              <span style={{ color: "var(--muted)", fontWeight: 400 }}>({p.reviewCount} reviews)</span>
-            </span>
-            <ul className="specs">
-              {p.keySpecs.slice(0, 3).map((spec) => (
-                <li key={spec}>{spec}</li>
-              ))}
-            </ul>
-            {p.visualDescription ? (
-              <p className="visual" style={{ margin: "0 0 8px" }}>
-                <span style={{ color: "var(--muted)" }}>Looks like: </span>
-                {p.visualDescription}
-              </p>
-            ) : null}
-            {p.inStock ? (
-              <button
-                type="button"
-                className="btn"
-                disabled={busy}
-                onClick={() => onAdd(index)}
-              >
-                Add the {ORDINALS[index] ?? `option ${index + 1}`} to cart
-              </button>
-            ) : (
-              <p className="outOfStock" style={{ margin: 0 }}>
-                Out of stock — ask Echo for an alternative in {p.category}.
-              </p>
-            )}
-          </li>
-        ))}
+    <section aria-labelledby="products-heading" className="stack">
+      <div className="cluster" style={{ justifyContent: "space-between" }}>
+        <h2 id="products-heading" className="section-title" style={{ margin: 0 }}>
+          {products.length === 1 ? "1 option" : `${products.length} options`}
+        </h2>
+        <p className="muted" style={{ margin: 0, fontSize: "0.8rem" }}>
+          Echo picked these for you
+        </p>
+      </div>
+
+      <ul className="results__grid">
+        <AnimatePresence initial={false} mode="popLayout">
+          {products.map((p, index) => (
+            <ProductCard
+              key={p.id}
+              product={p}
+              index={index}
+              currency={currency}
+              busy={busy}
+              reducedMotion={reducedMotion}
+              spotlight={spotlightId === p.id}
+              onAdd={onAdd}
+            />
+          ))}
+        </AnimatePresence>
       </ul>
     </section>
   );

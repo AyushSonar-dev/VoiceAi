@@ -2,8 +2,6 @@
 
 import { useEffect, useState, type FormEvent } from "react";
 
-export type AgentStatusShown = "connecting" | "listening" | "thinking" | "ended" | "error";
-
 interface Props {
   sttAvailable: boolean;
   ttsAvailable: boolean;
@@ -11,37 +9,22 @@ interface Props {
   voiceAgent: boolean;
   busy: boolean;
   recording: boolean;
-  agentStatus: AgentStatusShown | null;
   onMicToggle: () => void;
   onSubmitText: (text: string) => void;
   lastUserText: string;
 }
 
-function statusText(status: AgentStatusShown | null, recording: boolean): string {
-  if (recording) return "Listening… speak now.";
-  switch (status) {
-    case "connecting":
-      return "Connecting to the voice agent…";
-    case "thinking":
-      return "Thinking…";
-    case "error":
-      return "The voice agent hit an error. Try again.";
-    case "ended":
-      return "Call ended. Tap the mic or type to start again.";
-    case "listening":
-      return "Connected — speak or type.";
-    default:
-      return "Tap the mic or type below.";
-  }
-}
-
+/**
+ * The controls that start and steer a turn. The behaviour here is unchanged from
+ * the original panel — press to talk, or type — only the presentation is
+ * different.
+ */
 export function VoicePanel({
   sttAvailable,
   ttsAvailable,
   voiceAgent,
   busy,
   recording,
-  agentStatus,
   onMicToggle,
   onSubmitText,
   lastUserText,
@@ -67,49 +50,74 @@ export function VoicePanel({
   const canMic = micUsable && !busy;
   const demoFallback = !voiceAgent && !sttAvailable;
 
-  return (
-    <div className="card" aria-labelledby="voice-heading">
-      <div className="row spread">
-        <h2 id="voice-heading">Talk to Echo</h2>
-        <p className="transcript" style={{ margin: 0 }}>
-          {voiceAgent
-            ? "Voice: AssemblyAI Voice Agent"
-            : `STT: ${sttAvailable ? "AssemblyAI" : "demo text"} · TTS: ${ttsAvailable ? "ElevenLabs" : "browser voice"}`}
-        </p>
-      </div>
+  // Order matters: the browser's own limits are checked before the backend's,
+  // otherwise a device with no microphone is blamed on missing API keys.
+  const micLabel = recording ? "Stop listening" : "Start listening";
+  const micTitle = !mediaSupported
+    ? "This browser can't capture audio — type your request instead."
+    : !voiceAgent && !sttAvailable
+      ? "Voice needs the AssemblyAI keys — type your request instead."
+      : recording
+        ? "Stop listening. Echo stops hearing you."
+        : "Start listening. Echo starts hearing you.";
 
-      <div className="row" style={{ marginBottom: "0.75rem" }}>
+  return (
+    <section className="panel voice" aria-labelledby="voice-heading">
+      <h2 id="voice-heading" className="sr-only">
+        Talk to Echo
+      </h2>
+
+      <div className="voice__row">
         <button
           type="button"
-          className={`btn micBtn${recording ? " recording" : ""}`}
+          className="mic"
+          data-active={recording}
           onClick={onMicToggle}
           disabled={!canMic}
-          aria-label={recording ? "Stop listening" : "Start listening"}
-          title={
-            !micUsable
-              ? "Voice needs the AssemblyAI backend — use the text box below."
-              : !mediaSupported
-                ? "This browser can't capture audio — use the text box below."
-                : recording
-                  ? "Stop listening"
-                  : "Start listening"
-          }
+          aria-pressed={recording}
+          aria-label={micTitle}
+          title={micTitle}
         >
-          {recording ? "Stop" : "Mic"}
+          <span className="mic__ring" aria-hidden="true" />
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true" focusable="false">
+            <rect x="9" y="2.5" width="6" height="11" rx="3" fill="currentColor" />
+            <path
+              d="M5 11a7 7 0 0 0 14 0M12 18v3.5M8.5 21.5h7"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
 
-        <span aria-live="polite" className="transcript" data-testid="mic-status">
-          {statusText(agentStatus, recording)}
-        </span>
+        <div className="voice__status">
+          {/* The agent state has a single authoritative readout of its own, next
+              to the orb, and that is the one screen readers hear. This line only
+              names which services are in use, so the two never talk over each
+              other. */}
+          <p className="voice__status-main">
+            {recording ? "Recording" : "Press to talk, or type below"}
+          </p>
+          <p className="voice__status-sub">
+            {voiceAgent
+              ? "Live voice agent"
+              : `Speech-to-text ${sttAvailable ? "ready" : "off"} · speech ${
+                  ttsAvailable ? "ready" : "browser"
+                }`}
+          </p>
+        </div>
       </div>
 
-      {demoFallback && (
-        <p className="transcript" style={{ marginTop: 0 }}>
-          DEMO FALLBACK: voice isn&apos;t configured yet, so you can type what you would say out loud.
+      {demoFallback ? (
+        <p className="notice">
+          Demo mode: voice keys aren&apos;t configured, so type what you would say out loud. The
+          microphone button stays disabled rather than pretending to work.
         </p>
-      )}
+      ) : null}
 
-      <form onSubmit={submit} className="row" role="search" aria-label="Type a request for Echo">
+      {/* A chat composer, not a site search: `role="form"` names the landmark
+          correctly instead of announcing a search region. */}
+      <form className="voice__form" onSubmit={submit} role="form" aria-label="Ask Echo to shop">
         <label className="sr-only" htmlFor="voice-input">
           What would you like to shop for?
         </label>
@@ -122,16 +130,16 @@ export function VoicePanel({
           disabled={busy}
           autoComplete="off"
         />
-        <button type="submit" className="btn primary" disabled={busy || !draft.trim()}>
+        <button type="submit" className="btn btn--primary" disabled={busy || !draft.trim()}>
           Send
         </button>
       </form>
 
-      {lastUserText && (
-        <p className="transcript" style={{ marginBottom: 0 }}>
-          You said: “{lastUserText}”
+      {lastUserText ? (
+        <p className="voice__status-sub" style={{ margin: 0 }}>
+          Last thing you said: “{lastUserText}”
         </p>
-      )}
-    </div>
+      ) : null}
+    </section>
   );
 }

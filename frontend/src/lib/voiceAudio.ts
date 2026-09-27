@@ -21,17 +21,35 @@ class EchoPcmProcessor extends AudioWorkletProcessor {
     if (input) {
       const n = Math.floor(input.length / this.ratio);
       const pcm = new Int16Array(n);
+      // True RMS of the real input block, sent alongside the audio so the UI can
+      // drive visual state from actual signal level instead of a fake animation.
+      let sum = 0;
       for (let i = 0; i < n; i++) {
         const sample = input[Math.floor(i * this.ratio)] ?? 0;
+        sum += sample * sample;
         pcm[i] = Math.max(-32768, Math.min(32767, Math.round(sample * 32767)));
       }
-      this.port.postMessage(pcm.buffer, [pcm.buffer]);
+      const rms = n > 0 ? Math.sqrt(sum / n) : 0;
+      this.port.postMessage({ pcm: pcm.buffer, rms }, [pcm.buffer]);
     }
     return true;
   }
 }
 registerProcessor("echolabs-pcm", EchoPcmProcessor);
 `;
+
+/**
+ * Normalise a raw RMS into 0..1. Speech sits well below full scale, so this is
+ * a gentle curve with a noise floor: it must ignore room tone and never peg at
+ * 1 for ordinary talking.
+ */
+export function rmsToLevel(rms: number): number {
+  if (!Number.isFinite(rms) || rms <= 0) return 0;
+  const FLOOR = 0.008;
+  if (rms <= FLOOR) return 0;
+  const scaled = Math.min(1, (rms - FLOOR) / 0.22);
+  return Math.min(1, scaled * scaled * 1.35);
+}
 
 let moduleUrl: string | null = null;
 async function getProcessorModuleUrl(): Promise<string> {
@@ -46,7 +64,18 @@ export interface VoiceMic {
   context: AudioContext;
   /** Call with the base64-encoded PCM16 chunks via setOnPcm. */
   setOnPcm: (send: (base64: string) => void) => void;
+  /**
+   * Real input level 0..1 for the same block. This is measured from the
+   * microphone signal, so the interface can react to actual speech rather than
+   * running a loop that pretends to be an audio meter.
+   */
+  setOnLevel: (report: (level: number) => void) => void;
   stop: () => void;
+}
+
+interface WorkletFrame {
+  pcm: ArrayBuffer;
+  rms: number;
 }
 
 export async function startCapture(): Promise<VoiceMic> {
@@ -63,14 +92,28 @@ export async function startCapture(): Promise<VoiceMic> {
   const source = context.createMediaStreamSource(stream);
   source.connect(worklet);
 
+  // One port, many listeners: assigning onmessage twice would silently drop
+  // either the audio stream or the level meter.
+  let sendPcm: ((base64: string) => void) | null = null;
+  let reportLevel: ((level: number) => void) | null = null;
+  worklet.port.onmessage = (e: MessageEvent<WorkletFrame>) => {
+    const frame = e.data;
+    if (!frame) return;
+    if (reportLevel) reportLevel(rmsToLevel(frame.rms));
+    if (sendPcm && frame.pcm) sendPcm(int16ToBase64(new Int16Array(frame.pcm)));
+  };
+
   const mic: VoiceMic = {
     context,
     setOnPcm: (send) => {
-      worklet.port.onmessage = (e: MessageEvent<ArrayBuffer>) => {
-        send(int16ToBase64(new Int16Array(e.data)));
-      };
+      sendPcm = send;
+    },
+    setOnLevel: (report) => {
+      reportLevel = report;
     },
     stop: () => {
+      sendPcm = null;
+      reportLevel = null;
       stream.getTracks().forEach((t) => t.stop());
       worklet.disconnect();
       source.disconnect();
@@ -104,14 +147,64 @@ export interface VoicePlayer {
   flush: () => void;
 }
 
-export function createPlayer(context: AudioContext): VoicePlayer {
+export interface VoicePlayerOptions {
+  /**
+   * Real output level 0..1, reported from the PCM actually scheduled for
+   * playback (and decayed to 0 once the queue drains), so "speaking" visuals
+   * follow the agent's actual voice.
+   */
+  onLevel?: (level: number) => void;
+}
+
+export function createPlayer(context: AudioContext, options: VoicePlayerOptions = {}): VoicePlayer {
   let playbackTime = context.currentTime;
+  const { onLevel } = options;
+  // Queue of { at, duration, peak } so the level meter decays to silence when
+  // the scheduled audio has actually finished, not on an arbitrary timer.
+  let queue: Array<{ at: number; duration: number; peak: number }> = [];
+  let raf = 0;
+
+  const stopMeter = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+  };
+
+  const meter = () => {
+    const now = context.currentTime;
+    queue = queue.filter((q) => q.at + q.duration > now);
+    let peak = 0;
+    for (const q of queue) peak = Math.max(peak, q.peak);
+    // Ease the tail off over the last 120 ms of audio for a natural release.
+    let level = peak;
+    if (peak > 0) {
+      const soonest = queue.reduce((a, b) => (a.at < b.at ? a : b));
+      const remaining = soonest.at + soonest.duration - now;
+      if (remaining < 0.12) level = peak * (remaining / 0.12);
+    }
+    onLevel?.(Math.max(0, Math.min(1, level)));
+    if (queue.length > 0) {
+      raf = requestAnimationFrame(meter);
+    } else {
+      stopMeter();
+      onLevel?.(0);
+    }
+  };
+
+  const ensureMeter = () => {
+    if (!onLevel || raf) return;
+    raf = requestAnimationFrame(meter);
+  };
 
   return {
     play: (base64) => {
       const pcm = base64ToPcm16(base64);
       const float32 = new Float32Array(pcm.length);
-      for (let i = 0; i < pcm.length; i++) float32[i] = pcm[i] / 32768;
+      let sum = 0;
+      for (let i = 0; i < pcm.length; i++) {
+        float32[i] = pcm[i] / 32768;
+        sum += float32[i] * float32[i];
+      }
+      const peak = pcm.length > 0 ? Math.sqrt(sum / pcm.length) : 0;
 
       const buffer = context.createBuffer(1, float32.length, 24000);
       buffer.getChannelData(0).set(float32);
@@ -122,10 +215,15 @@ export function createPlayer(context: AudioContext): VoicePlayer {
       const now = context.currentTime;
       playbackTime = Math.max(playbackTime, now);
       src.start(playbackTime);
+      queue.push({ at: playbackTime, duration: buffer.duration, peak: rmsToLevel(peak) });
       playbackTime += buffer.duration;
+      ensureMeter();
     },
     flush: () => {
       playbackTime = context.currentTime;
+      queue = [];
+      stopMeter();
+      onLevel?.(0);
     },
   };
 }
