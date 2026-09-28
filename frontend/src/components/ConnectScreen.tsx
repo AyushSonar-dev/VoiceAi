@@ -1,87 +1,68 @@
 "use client";
 
+import { motion, useReducedMotion } from "framer-motion";
+import type { AgentPhase } from "@/lib/agentState";
+
 interface Props {
-  /** blocks double submits and reflects the connect attempt */
-  busy: boolean;
-  /** capabilities have not loaded yet, so nothing may be claimed about them */
+  phase: AgentPhase;
   ready: boolean;
-  /** the real AssemblyAI voice agent is configured */
   voiceAgent: boolean;
-  /** this browser cannot capture audio, so the text box is the only route */
   micUnsupported: boolean;
+  reducedMotion: boolean;
   onConnect: () => void;
 }
 
 /**
- * The first screen. One job: make it unmistakable that starting the
- * conversation is the primary action, and that everything else is secondary.
+ * The pre-connection invitation.
+ *
+ * This is not a separate screen: the core is already on the page behind it, and
+ * pressing connect only removes the invitation and brings the rest of the
+ * interface in. The transition is therefore a change of surroundings around one
+ * continuous object, rather than a swap between two layouts.
  */
-export function ConnectScreen({ busy, ready, voiceAgent, micUnsupported, onConnect }: Props) {
-  const label = busy ? "Connecting…" : "Connect agent";
+export function ConnectScreen({
+  phase,
+  ready,
+  voiceAgent,
+  micUnsupported,
+  reducedMotion,
+  onConnect,
+}: Props) {
+  const libReduced = useReducedMotion();
+  const still = reducedMotion || libReduced === true;
+  const connecting = phase === "connecting";
 
   return (
-    <section className="connect" aria-labelledby="connect-title">
-      <p className="section-title">Echo</p>
-
-      <h1 id="connect-title" className="connect__title">
-        Shop by talking.
-      </h1>
-
-      <p className="connect__lede">
-        Tell Echo what you&apos;re looking for in your own words. It searches the catalog, reads
-        product details back to you, and handles your cart.
+    <motion.div
+      className="invite"
+      initial={still ? { opacity: 0 } : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={still ? { opacity: 0 } : { opacity: 0, y: -10, transition: { duration: 0.22 } }}
+      transition={{ duration: still ? 0.15 : 0.4, ease: [0.22, 1, 0.36, 1] }}
+    >
+      <p className="invite__lede">
+        A shopping assistant you talk to. Ask for a shirt, add it to your cart, apply a
+        coupon, check out — out loud.
       </p>
 
-      <div className="connect__action">
-        <button
-          type="button"
-          className="connect__button"
-          onClick={onConnect}
-          disabled={busy}
-          aria-label={
-            busy
-              ? "Connecting to the voice agent"
-              : "Connect agent and start shopping by voice"
-          }
-        >
-          <svg
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            aria-hidden="true"
-            focusable="false"
-          >
-            <rect x="9" y="2.5" width="6" height="11" rx="3" fill="currentColor" />
-            <path
-              d="M5 11a7 7 0 0 0 14 0M12 18v3.5M8.5 21.5h7"
-              stroke="currentColor"
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
-          </svg>
-          <span>{label}</span>
-        </button>
-      </div>
+      <button
+        type="button"
+        className="invite__cta"
+        onClick={onConnect}
+        disabled={!ready || connecting || micUnsupported}
+      >
+        {connecting ? "Connecting…" : "Connect"}
+      </button>
 
-      <p className="connect__hint">
-        {busy
-          ? "Opening a private voice connection…"
-          : micUnsupported
-            ? "Your browser can't capture audio, so Echo will listen through the text box after connecting."
-            : "Echo will ask for microphone access so it can hear you. You can type instead at any time."}
-      </p>
-
-      {/* Nothing about the service is claimed until capabilities have actually
-          loaded, so the page never briefly asserts "demo mode" and then
-          contradicts itself. */}
-      <p className="connect__note">
+      <p className="invite__note">
         {!ready
-          ? "Checking which services are available…"
-          : voiceAgent
-            ? "Voice is handled by a live speech agent. Product details always come from this app's own server."
-            : "Running in demo mode: speech-to-text and text-to-speech keys are not configured, so you can type what you would say."}
+          ? "Checking what's available…"
+          : micUnsupported
+            ? "This browser can't reach a microphone, so use the keyboard once you're connected."
+            : voiceAgent
+              ? "Opens a live voice connection. Your browser will ask for microphone access."
+              : "No live voice agent is configured. You can still type your request."}
       </p>
-    </section>
+    </motion.div>
   );
 }

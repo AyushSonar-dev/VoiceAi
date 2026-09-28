@@ -1,29 +1,33 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import type { Capabilities, EchoState } from "@/types";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import type { Capabilities, EchoState, RecentProduct } from "@/types";
 import { callTool, getCapabilities, getState, getVoiceSetup, newSession, postTurn } from "@/lib/api";
 import { ensureSessionId } from "@/lib/session";
 import { fallbackSpeak, startRecording, type RecordingHandle } from "@/lib/audio";
 import { VoiceAgentSession, type AgentStatus } from "@/lib/voiceAgent";
 import { usePrefs } from "@/lib/prefs";
-import { usePhaseView, useSmoothedLevel } from "@/lib/agentState";
+import { useAudioMeter, usePhaseView } from "@/lib/agentState";
 import { useTranscript } from "@/lib/transcript";
 import { LiveRegion } from "./LiveRegion";
 import { ConnectScreen } from "./ConnectScreen";
-import { AgentOrb } from "./AgentOrb";
+import { AgentCore } from "./AgentCore";
 import { Transcript } from "./Transcript";
-import { VoicePanel } from "./VoicePanel";
+import { Composer } from "./Composer";
 import { ProductList } from "./ProductList";
 import { CartPanel } from "./CartPanel";
 import { CheckoutPanel } from "./CheckoutPanel";
 import { AccessibilityControls } from "./AccessibilityControls";
 
-const ORDINALS = ["first", "second", "third", "fourth", "fifth"];
-
-/** Tool results worth hearing about, even though the transcript also has them. */
-const ANNOUNCED_TOOLS = new Set(["addToCart", "removeFromCart", "applyCoupon", "checkout", "checkout_preview"]);
+/** Tool results worth hearing, phrased by the server rather than by us. */
+const ANNOUNCED_TOOLS = new Set([
+  "addToCart",
+  "removeFromCart",
+  "applyCoupon",
+  "checkout",
+  "checkout_preview",
+]);
 
 const EMPTY_CART: EchoState["cart"] = {
   isEmpty: true,
@@ -43,18 +47,28 @@ export function EchoApp() {
   const [connected, setConnected] = useState(false);
   const [busy, setBusy] = useState(false);
   const [recording, setRecording] = useState(false);
-  const [lastUserText, setLastUserText] = useState("");
   const [fillerText, setFillerText] = useState("");
   const [agentStatus, setAgentStatus] = useState<AgentStatus | null>(null);
   const [speaking, setSpeaking] = useState(false);
+  /**
+   * Whether the server's voice-activity detection currently says the user is
+   * talking. The agent reports the `listening` status both when it is idly
+   * waiting and while someone is speaking, so this is the only signal that can
+   * tell those two states apart honestly.
+   */
+  const [userSpeaking, setUserSpeaking] = useState(false);
   const [micUnsupported, setMicUnsupported] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [notice, setNotice] = useState<{ text: string; tone: "info" | "error" } | null>(null);
-  const [audioLevel, setAudioLevel] = useState<{ value: number; source: "in" | "out" } | null>(null);
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [dismissedOrder, setDismissedOrder] = useState<string | null>(null);
 
   const prefs = usePrefs();
   const { reducedMotion } = prefs;
+  const libReduced = useReducedMotion();
+  const still = reducedMotion || libReduced === true;
+
   const transcript = useTranscript();
   const demoRecordingHandle = useRef<RecordingHandle | null>(null);
   const voiceSession = useRef<VoiceAgentSession | null>(null);
@@ -75,16 +89,21 @@ export function EchoApp() {
     busy: effectiveBusy,
     speaking,
     filler: Boolean(fillerText),
+    userSpeaking,
   });
 
-  const levelForOrb = useSmoothedLevel(audioLevel?.value ?? 0, reducedMotion);
-  // `null` means "no audio exists to react to" — the orb must not fake a meter.
-  const orbLevel = speaking || recording ? levelForOrb : null;
+  /**
+   * The level fed to the core comes from the matching direction only: the
+   * microphone while the user is talking, the speaker while the agent is. When
+   * there is no audio in that direction the level is `null`, and the core is
+   * driven by its own slow breath rather than an invented meter.
+   */
+  // Audio is written into a shared box, not state: it arrives on every frame
+  // and only the core reads it, so keeping it in state would re-render the
+  // products, the cart and the transcript sixty times a second for nothing.
+  const audio = useAudioMeter();
 
-  // The orb is sized from the box it actually sits in, not from the window.
-  // Magnification shrinks that box, so measuring the window would let the orb
-  // overflow at 200% zoom. `clientWidth` is a layout value in the element's own
-  // coordinate space, which is the same space the canvas is sized in.
+  /* ---- sizing: the core is measured from its own box, never the window ---- */
   const stageRef = useRef<HTMLDivElement | null>(null);
   const [stageWidth, setStageWidth] = useState(0);
   const [viewportHeight, setViewportHeight] = useState(768);
@@ -97,7 +116,7 @@ export function EchoApp() {
     const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
-  }, [connected]);
+  }, []);
 
   useEffect(() => {
     const read = () => setViewportHeight(window.innerHeight);
@@ -110,20 +129,31 @@ export function EchoApp() {
     };
   }, []);
 
-  // Results introduce themselves below the agent, which then steps back.
-  const hasResults = (echoState?.recentProducts.length ?? 0) > 0;
-  // Before the stage has been measured, fall back to a size that cannot overflow
-  // on any real screen; the effect corrects it on the first frame.
-  const available = stageWidth > 0 ? stageWidth : 320;
-  const orbSize = hasResults
-    ? Math.max(104, Math.min(168, available * 0.28))
-    : Math.max(128, Math.min(340, available * 0.78, viewportHeight * 0.42));
+  const products = echoState?.recentProducts ?? [];
+  const hasResults = products.length > 0;
+  const order = echoState?.lastOrder ?? null;
+  const showOrder = order !== null && order.id !== dismissedOrder;
+
+  /**
+   * The core is sized to be genuinely dominant: roughly 46% of the viewport
+   * height before results arrive, easing to 40% once there is a grid below it.
+   * It eases rather than snaps so a long conversation never leaves a small
+   * circle stranded at the top of the page.
+   */
+  const coreSize = useMemo(() => {
+    const available = stageWidth > 0 ? stageWidth : 320;
+    const byHeight = viewportHeight * (hasResults ? 0.4 : 0.46);
+    const byWidth = available * 0.78;
+    return Math.round(Math.max(200, Math.min(byHeight, byWidth, 520)));
+  }, [stageWidth, viewportHeight, hasResults]);
 
   useEffect(() => {
-    setMicUnsupported(typeof navigator !== "undefined" && !navigator.mediaDevices?.getUserMedia);
+    setMicUnsupported(
+      typeof navigator !== "undefined" && !navigator.mediaDevices?.getUserMedia
+    );
   }, []);
 
-  // ---- boot: capabilities, session, state ----
+  /* ---- boot: capabilities, session, state ---- */
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -139,8 +169,7 @@ export function EchoApp() {
         if (!cancelled) {
           stateRef.current = s;
           setEchoState(s);
-          // A returning shopper who already has results goes straight to the
-          // shopping view rather than the empty landing.
+          // A returning shopper with results already goes to the shopping view.
           if (s.recentProducts.length > 0) setConnected(true);
         }
       } catch {
@@ -168,38 +197,33 @@ export function EchoApp() {
   }, [sessionId]);
 
   /**
-   * Highlight whichever product the agent is currently talking about. Matching
-   * is done on the agent's own words, because that is the only signal available
-   * without changing the agent or the backend: whichever product name it just
-   * said is the one it is describing. An explicit tool result takes precedence,
-   * since that is a direct statement of which product was acted on.
+   * Highlight whichever product the agent is currently describing. Matching uses
+   * the agent's own words, because that is the only signal available without
+   * changing the agent: the product it just named is the one it is talking
+   * about. A direct tool result takes precedence over the text match.
    */
   const spotlightFromText = useCallback((text: string): string | null => {
-    const products = stateRef.current?.recentProducts ?? [];
-    if (products.length === 0) return null;
+    const list = stateRef.current?.recentProducts ?? [];
+    if (list.length === 0) return null;
     const said = text.toLowerCase();
     let best: { id: string; score: number } | null = null;
-    for (const p of products) {
+    for (const p of list) {
       const name = p.name.toLowerCase();
       if (!name || !said.includes(name)) continue;
-      // Prefer the most specific (longest) name mentioned, so "Cotton Ankle
-      // Socks" wins over a shorter product that happens to be a substring.
+      // Prefer the most specific name, so a longer product wins over a substring.
       if (!best || name.length > best.score) best = { id: p.id, score: name.length };
     }
     return best ? best.id : null;
   }, []);
 
-  const focusSpotlight = useCallback(
-    (name: string | undefined) => {
-      if (!name) return;
-      const needle = name.toLowerCase();
-      const match = (stateRef.current?.recentProducts ?? []).find(
-        (p) => p.name.toLowerCase() === needle
-      );
-      if (match) setSpotlightId(match.id);
-    },
-    []
-  );
+  const focusSpotlight = useCallback((name: string | undefined) => {
+    if (!name) return;
+    const needle = name.toLowerCase();
+    const match = (stateRef.current?.recentProducts ?? []).find(
+      (p) => p.name.toLowerCase() === needle
+    );
+    if (match) setSpotlightId(match.id);
+  }, []);
 
   const ensureVoice = useCallback(async (): Promise<VoiceAgentSession> => {
     const existing = voiceSession.current;
@@ -213,12 +237,15 @@ export function EchoApp() {
       async (name, args) => callTool(name, args, sessionId),
       {
         onStatus: (status) => setAgentStatus(status),
-        onUserTurnStart: () => transcript.sealOpen("user"),
+        onUserTurnStart: () => {
+          setUserSpeaking(true);
+          transcript.sealOpen("user");
+        },
         onUserTranscript: (text, final, mode) => {
           const clean = text.trim();
           if (!clean) return;
           if (final) {
-            setLastUserText(clean);
+            setUserSpeaking(false);
             transcript.commit("user", clean);
           } else if (mode === "cumulative") {
             transcript.setPartial("user", clean);
@@ -232,29 +259,33 @@ export function EchoApp() {
           if (final) transcript.commit("agent", clean);
           else if (mode === "cumulative") transcript.setPartial("agent", clean);
           else transcript.appendPartial("agent", clean);
-          // Track the product as it is being described, not only at the end, so
-          // the card lights up while Echo is still talking about it.
+          // Track the product as it is described, not only at the end, so the card
+          // lifts while Echo is still talking about it.
           setSpotlightId(spotlightFromText(clean));
         },
         onToolCall: ({ name, result }) => {
           if (result.success && ANNOUNCED_TOOLS.has(name)) {
-            // The server already words these for speech; reuse it verbatim
-            // rather than inventing a second description of what happened.
+            // The server already words these for speech; reuse it verbatim rather
+            // than inventing a second description of what happened.
             setAnnouncement(result.message ?? "Done.");
           }
-          focusSpotlight(typeof result.data?.productName === "string" ? result.data.productName : undefined);
+          focusSpotlight(
+            typeof result.data?.productName === "string" ? result.data.productName : undefined
+          );
           void refreshState();
         },
         onReplyDone: ({ interrupted }) => {
           transcript.closeAgentReply(interrupted);
+          setUserSpeaking(false);
           if (interrupted) setAnnouncement("You interrupted Echo.");
-          // The spotlight belongs to the utterance, so it clears when the
-          // reply ends rather than leaving a stale card ringed forever.
+          // The spotlight belongs to the utterance, so it clears when the reply
+          // ends rather than leaving a stale card highlighted forever.
           if (!interrupted) setSpotlightId(null);
         },
         onSpeakingChange: setSpeaking,
         onAudioLevel: (level, source) => {
-          setAudioLevel(level > 0 ? { value: level, source } : null);
+          audio.value = level;
+          audio.source = level > 0 ? source : null;
         },
         onError: (message) => setNotice({ text: `Voice agent: ${message}`, tone: "error" }),
       }
@@ -262,8 +293,8 @@ export function EchoApp() {
     voiceSession.current = session;
     await session.connect();
     return session;
-    // NOTE: `transcript` is a stable object of useCallback functions, and the
-    // spotlight helpers read through refs, so this is created once per session.
+    // `transcript` is a stable object of useCallback functions and the spotlight
+    // helpers read through refs, so this is created once per session.
   }, [sessionId, refreshState, transcript, focusSpotlight, spotlightFromText]);
 
   const playReply = useCallback((reply: string, audioUrl: string | null) => {
@@ -280,14 +311,13 @@ export function EchoApp() {
     async (input: { text?: string; audioBase64?: string }) => {
       if (!sessionId || !caps) return;
 
-      // ---- real mode: one AssemblyAI Voice Agent session ----
+      /* ---- live mode: one AssemblyAI Voice Agent session ---- */
       if (caps.voiceAgent) {
         if (effectiveBusy) return;
         const text = input.text?.trim();
         if (!text) return;
         // A new turn supersedes whatever the last failure was warning about.
         setNotice(null);
-        setLastUserText(text);
         try {
           setConnected(true);
           const session = await ensureVoice();
@@ -303,7 +333,7 @@ export function EchoApp() {
         return;
       }
 
-      // ---- demo mode: text / recorded audio through the plain tool loop ----
+      /* ---- demo mode: text or recorded audio through the plain tool loop ---- */
       if (effectiveBusy) return;
       setNotice(null);
       setBusy(true);
@@ -311,7 +341,6 @@ export function EchoApp() {
       try {
         const events = await postTurn({ sessionId, ...input });
         if (events.userText) {
-          setLastUserText(events.userText);
           transcript.commit("user", events.userText);
         }
         if (events.filler) setFillerText(events.filler.text);
@@ -338,12 +367,6 @@ export function EchoApp() {
     [sessionId, caps, effectiveBusy, ensureVoice, playReply, transcript]
   );
 
-  /**
-   * The primary action on the landing screen. In the live-agent configuration
-   * this opens the voice session and starts the microphone. Without those keys
-   * there is nothing to open, so it says so plainly rather than flipping the
-   * interface into a "listening" state that is not actually capturing audio.
-   */
   const handleConnect = useCallback(async () => {
     if (connected) return;
     setConnected(true);
@@ -376,6 +399,7 @@ export function EchoApp() {
     if (effectiveBusy) return;
     if (recording) {
       setRecording(false);
+      setUserSpeaking(false);
       if (voiceAgent) {
         voiceSession.current?.stopMic();
       } else {
@@ -414,52 +438,14 @@ export function EchoApp() {
       : undefined;
   const awaitingCheckoutConfirmation = lastActionType === "checkout_preview";
 
+  const currency = caps?.currency ?? "INR";
+
   const statusLine = useMemo(() => {
-    if (!caps) return "connecting…";
-    return `${voiceAgent ? "Live voice agent" : `Speech ${caps.stt ? "ready" : "off"}`} · Database ${
-      caps.db === "mongodb" ? "connected" : caps.db === "memory" ? "in memory" : caps.db
-    } · ${caps.currency}`;
+    if (!caps) return "Checking what's available…";
+    return `${voiceAgent ? "Live voice" : `Speech ${caps.stt ? "ready" : "off"}`} · ${
+      caps.db === "mongodb" ? "database connected" : caps.db === "memory" ? "database in memory" : caps.db
+    }`;
   }, [caps, voiceAgent]);
-
-  const transcriptAnnouncement = useMemo(() => {
-    const last = [...transcript.messages].reverse().find((m) => m.speaker === "agent" && !m.partial);
-    return last ? last.text : "";
-  }, [transcript.messages]);
-
-  if (!connected) {
-    return (
-      <div className="app">
-        <a className="skip-link" href="#main">
-          Skip to the voice controls
-        </a>
-        <header className="app__bar">
-          <div className="brand">
-            <p className="brand__mark">Echo</p>
-            <p className="brand__meta">{statusLine}</p>
-          </div>
-        </header>
-
-        <main id="main" className="app__content">
-          <div className="zoom-region connect-region">
-            <ConnectScreen
-              busy={agentStatus === "connecting"}
-              ready={caps !== null}
-              voiceAgent={voiceAgent}
-              micUnsupported={micUnsupported}
-              onConnect={() => void handleConnect()}
-            />
-          </div>
-        </main>
-
-        <div className="app__foot">
-          {notice ? (
-            <p className={`notice${notice.tone === "error" ? " notice--error" : ""}`}>{notice.text}</p>
-          ) : null}
-          <AccessibilityControls prefs={prefs} />
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="app">
@@ -467,163 +453,163 @@ export function EchoApp() {
         Skip to the voice controls
       </a>
 
-      <LiveRegion text={`${announcement}${notice ? ` ${notice.text}` : ""}`} label="Action result" busy={effectiveBusy} />
+      {/* Announcements that are not the conversation: what a tool confirmed, and
+          anything the user needs to act on. The transcript announces replies
+          itself, so nothing is deliberately sent to two regions at once. */}
+      <LiveRegion
+        text={`${announcement}${notice ? ` ${notice.text}` : ""}`}
+        label="Action result"
+        busy={effectiveBusy}
+      />
 
-      <header className="app__bar">
-        <div className="brand">
-          <p className="brand__mark">Echo</p>
-          <p className="brand__meta">{statusLine}</p>
+      <header className="masthead">
+        <div className="masthead__brand">
+          <p className="brand">Echo</p>
+          <p className="masthead__status">{statusLine}</p>
         </div>
-        <div className="cluster">
-          {voiceAgent ? (
-            <span className="badge badge--live">
-              <span className="dot dot--pulse" aria-hidden="true" />
-              Live
-            </span>
-          ) : null}
+        <div className="masthead__actions">
+          <CartPanel
+            open={cartOpen}
+            onOpen={() => setCartOpen(true)}
+            onClose={() => setCartOpen(false)}
+            cart={echoState?.cart ?? EMPTY_CART}
+            currency={currency}
+            busy={effectiveBusy}
+            reducedMotion={reducedMotion}
+            onRemove={(name) => void runTurn({ text: `remove the ${name} from my cart` })}
+            onApplyCoupon={(code) => void runTurn({ text: `apply the coupon code ${code}` })}
+            onCheckout={() => void runTurn({ text: "check out" })}
+          />
           <AccessibilityControls prefs={prefs} compact />
         </div>
       </header>
 
       <main id="main" className="app__content">
-        <div className="app__inner zoom-region">
-          {/* The agent is the dominant element at first, and eases back as
-              results arrive. The same node animates between the two sizes so the
-              transition is continuous rather than a swap. */}
-          <motion.section
-            className="agent"
-            aria-labelledby="agent-heading"
-            layout={!reducedMotion}
-            transition={{ duration: reducedMotion ? 0 : 0.55, ease: [0.22, 0.61, 0.36, 1] }}
-          >
-            <h2 id="agent-heading" className="sr-only">
-              Voice agent
-            </h2>
-
-            <div className="agent__stage" ref={stageRef}>
-              <AgentOrb
-                phase={phaseView.phase}
-                level={orbLevel}
-                reducedMotion={reducedMotion}
-                size={orbSize}
-                className="agent__orb"
-              />
-            </div>
-
-            <div className="agent__state">
-              {/* The single authoritative statement of what the agent is doing.
-                  It is the one place the phase is announced, so a screen reader
-                  hears each state exactly once, and it is real text rather than
-                  anything the orb conveys. */}
-              <p
-                className="agent__label"
-                role="status"
-                aria-live="polite"
-                aria-atomic="true"
-                data-phase={phaseView.phase}
-              >
-                {phaseView.label}
-              </p>
-              <p className="agent__detail">{phaseView.detail}</p>
-            </div>
-          </motion.section>
-
-          <div className="grid-2">
-            <div className="stack">
-              <Transcript
-                messages={transcript.messages}
-                reducedMotion={reducedMotion}
-                announcement={transcriptAnnouncement}
-              />
-              <VoicePanel
-                sttAvailable={caps?.stt ?? false}
-                ttsAvailable={caps?.tts ?? false}
-                voiceAgent={voiceAgent}
-                busy={effectiveBusy}
-                recording={recording}
-                onMicToggle={() => void toggleMic()}
-                onSubmitText={(text) => void runTurn({ text })}
-                lastUserText={lastUserText}
-              />
-            </div>
-
-            <CartPanel
-              cart={echoState?.cart ?? EMPTY_CART}
-              currency={caps?.currency ?? "₹"}
-              busy={effectiveBusy}
+        <div className="stage zoom-region">
+          {/* One continuous object. Everything else on the page is arranged
+              around it, and it does not get replaced when the state changes. */}
+          <div className="stage__core" ref={stageRef}>
+            <AgentCore
+              phase={phaseView.phase}
+              audio={audio}
               reducedMotion={reducedMotion}
-              onRemove={(name) => void runTurn({ text: `remove the ${name} from my cart` })}
-              onApplyCoupon={(code) => void runTurn({ text: `apply ${code}` })}
-              onCheckout={() => void runTurn({ text: "check out" })}
+              size={coreSize}
             />
           </div>
 
-          {/* Failures and guidance must be visible, not only announced: the
-              live region is invisible by design, so anything that needs the user
-              to act on it also gets a real, dismissible-free banner. The banner
-              is not itself a live region, because the announcement above already
-              read it out — two live regions would say it twice. */}
-          {notice ? (
-            <p
-              className={`notice${notice.tone === "error" ? " notice--error" : ""}`}
-              data-tone={notice.tone}
-            >
-              {notice.text}
+          <div className="stage__state">
+            <p className="stage__label" data-phase={phaseView.phase}>
+              {phaseView.label}
             </p>
-          ) : null}
+            <p className="stage__detail">{phaseView.detail}</p>
+            {/* The full sentence goes to assistive technology; the short word
+                above is what people can see. One live region, so each state is
+                heard once. */}
+            <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+              {phaseView.spoken}
+            </span>
+          </div>
 
           <AnimatePresence>
-            {awaitingCheckoutConfirmation ? (
-              <motion.div
-                className="panel checkout-confirm"
-                role="group"
-                aria-label="Confirm checkout"
-                initial={reducedMotion ? false : { opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
-                transition={{ duration: reducedMotion ? 0 : 0.3 }}
-              >
-                <p style={{ marginTop: 0 }}>
-                  Echo previewed your order. Nothing is placed until you confirm.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn--primary"
-                  disabled={effectiveBusy}
-                  onClick={() => void runTurn({ text: "yes, place the order" })}
-                >
-                  Yes, place the order
-                </button>
-              </motion.div>
+            {!connected ? (
+              <ConnectScreen
+                key="invite"
+                phase={phaseView.phase}
+                ready={caps !== null}
+                voiceAgent={voiceAgent}
+                micUnsupported={micUnsupported}
+                reducedMotion={reducedMotion}
+                onConnect={() => void handleConnect()}
+              />
             ) : null}
           </AnimatePresence>
 
-          {echoState?.lastOrder ? (
-            <CheckoutPanel
-              order={echoState.lastOrder}
-              currency={caps?.currency ?? "₹"}
-              reducedMotion={reducedMotion}
-            />
-          ) : null}
+          <AnimatePresence>
+            {connected ? (
+              <motion.div
+                key="active"
+                className="stage__active"
+                initial={still ? { opacity: 0 } : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={still ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                transition={{ duration: still ? 0.15 : 0.42, ease: [0.22, 1, 0.36, 1] }}
+              >
+                <Composer
+                  connected={connected}
+                  recording={recording}
+                  busy={effectiveBusy}
+                  reducedMotion={reducedMotion}
+                  onStart={() => void toggleMic()}
+                  onStop={() => void toggleMic()}
+                  onSend={(text) => void runTurn({ text })}
+                />
+
+                {/* Failures and guidance are visible, not only announced: the
+                    live region is invisible by design, so anything needing action
+                    also gets real text. It is not itself a live region, because
+                    the announcement above already read it out. */}
+                {notice ? (
+                  <p className={`notice${notice.tone === "error" ? " notice--error" : ""}`}>
+                    {notice.text}
+                  </p>
+                ) : null}
+
+                {awaitingCheckoutConfirmation ? (
+                  <div className="confirm" role="group" aria-label="Confirm checkout">
+                    <p className="confirm__text">
+                      Echo previewed your order. Nothing is placed until you confirm.
+                    </p>
+                    <button
+                      type="button"
+                      className="btn btn--solid"
+                      disabled={effectiveBusy}
+                      onClick={() => void runTurn({ text: "yes, place the order" })}
+                    >
+                      Yes, place the order
+                    </button>
+                  </div>
+                ) : null}
+
+                <CheckoutPanel
+                  order={showOrder ? order : null}
+                  currency={currency}
+                  reducedMotion={reducedMotion}
+                  onDismiss={() => setDismissedOrder(order?.id ?? null)}
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
+        </div>
+
+        <div className="below zoom-region">
+          <Transcript
+            messages={transcript.messages}
+            reducedMotion={reducedMotion}
+            onClear={transcript.clear}
+          />
 
           <ProductList
-            products={echoState?.recentProducts ?? []}
-            currency={caps?.currency ?? "₹"}
+            products={products}
+            spotlightId={spotlightId}
+            currency={currency}
             busy={effectiveBusy}
             reducedMotion={reducedMotion}
-            spotlightId={spotlightId}
-            onAdd={(optionIndex) =>
-              void runTurn({ text: `add the ${ORDINALS[optionIndex] ?? `option ${optionIndex + 1}`} one to my cart` })
+            onSelect={(p: RecentProduct) =>
+              void runTurn({ text: `tell me more about the ${p.name}` })
             }
+            onAdd={(p: RecentProduct) =>
+              void runTurn({ text: `add the ${p.name} to my cart` })
+            }
+            onFocus={(p: RecentProduct) => setSpotlightId(p.id)}
           />
         </div>
       </main>
 
       <footer className="app__foot">
-        <p style={{ margin: 0 }}>
-          {reducedMotion ? "Reduced motion is on. " : ""}
-          Every action runs through the app&apos;s own tool gateway first — Echo only ever speaks
-          what the server confirmed.
+        <p>
+          {still ? "Reduced motion is on. " : ""}
+          Every action runs through the app&apos;s own tool gateway first — Echo only ever
+          speaks what the server confirmed.
         </p>
       </footer>
     </div>

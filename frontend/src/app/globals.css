@@ -1,28 +1,26 @@
 /* ==========================================================================
    Echo — visual system
-   A near-black, high-contrast, voice-first interface. One restrained accent.
-   Layout is token-driven so the magnifier can rescale it without overlap.
+
+   One object at the centre: the Agent Core. Everything else is arranged around
+   it in a single column and is deliberately quiet — hairline rules and type
+   instead of filled cards, so the page reads as a conversation rather than a
+   dashboard.
    ========================================================================== */
 
 :root {
-  /* Surfaces: near-black, layered by lightness rather than by colour. */
   --bg: #08090b;
   --bg-deep: #050607;
   --surface: #101216;
   --surface-2: #171a20;
-  --surface-3: #1f232b;
-  --line: #2a2f38;
+  --line: #262a31;
   --line-strong: #3a4150;
 
-  /* Text: WCAG AAA on --bg for the primary tone. */
   --text: #f4f6f8;
-  --text-soft: #c3c9d2;
+  --text-soft: #c8cdd6;
   --muted: #8b93a1;
 
-  /* One accent, used sparingly. */
   --accent: #e8e2d5;
   --accent-ink: #08090b;
-  --accent-soft: rgba(232, 226, 213, 0.14);
   --live: #7fd1ae;
   --warn: #e9b872;
   --danger: #f09a8c;
@@ -42,19 +40,20 @@
   --space-8: 4rem;
 
   --focus: #f5d68a;
-  --shadow-lift: 0 1px 2px rgba(0, 0, 0, 0.6), 0 12px 32px rgba(0, 0, 0, 0.45);
-
   --content-scale: 1;
-  --tap: 2.75rem; /* minimum comfortable touch target */
+  --tap: 2.75rem;
+
+  --measure: 68ch;
+  --column: 72rem;
 }
 
-/* Light theme is retained as a genuine high-contrast option, not an afterthought. */
+/* Light is a genuine high-contrast option, not an afterthought. The core keeps
+   its own tonal range so it stays legible on a light ground. */
 :root[data-theme="light"] {
   --bg: #f6f5f2;
   --bg-deep: #eceae5;
   --surface: #ffffff;
   --surface-2: #f2f1ee;
-  --surface-3: #e7e5e0;
   --line: #d3d0c9;
   --line-strong: #a8a49b;
   --text: #12100e;
@@ -62,12 +61,10 @@
   --muted: #5d594f;
   --accent: #1a1714;
   --accent-ink: #ffffff;
-  --accent-soft: rgba(26, 23, 20, 0.09);
   --live: #1c6b4a;
   --warn: #8a5a12;
   --danger: #a33322;
   --focus: #7a4b00;
-  --shadow-lift: 0 1px 2px rgba(0, 0, 0, 0.08), 0 10px 24px rgba(0, 0, 0, 0.08);
 }
 
 *,
@@ -92,18 +89,18 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-/* A single, restrained wash behind everything — not a gradient showcase. */
+/* A single restrained wash, so the core has something to sit against. */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   pointer-events: none;
   z-index: 0;
-  background: radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.05), transparent 60%);
+  background: radial-gradient(120% 75% at 50% -8%, rgba(255, 255, 255, 0.05), transparent 62%);
 }
 
 :root[data-theme="light"] body::before {
-  background: radial-gradient(120% 80% at 50% -10%, rgba(0, 0, 0, 0.05), transparent 60%);
+  background: radial-gradient(120% 75% at 50% -8%, rgba(0, 0, 0, 0.05), transparent 62%);
 }
 
 button,
@@ -113,7 +110,6 @@ select {
   color: inherit;
 }
 
-/* Visible focus everywhere, on a dark ground. */
 :focus-visible {
   outline: 3px solid var(--focus);
   outline-offset: 3px;
@@ -151,7 +147,7 @@ select {
   top: var(--space-3);
 }
 
-/* ---------------------------------------------------------------- app frame */
+/* ------------------------------------------------------------------ frame */
 
 .app {
   position: relative;
@@ -161,649 +157,660 @@ select {
   flex-direction: column;
 }
 
-.app__bar {
+/* The header is a line of type, not a bar. It carries the wordmark, a one-line
+   status, the cart and the settings — and gets out of the way. */
+.masthead {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
   flex-wrap: wrap;
   padding: var(--space-4) clamp(var(--space-4), 4vw, var(--space-7));
-  border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--bg) 82%, transparent);
-  backdrop-filter: blur(8px);
 }
 
-.brand {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
+.masthead__brand {
   min-width: 0;
 }
 
-.brand__mark {
+.brand {
   margin: 0;
-  font-size: 1.05rem;
+  font-size: 0.95rem;
   font-weight: 600;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.2em;
   text-transform: uppercase;
 }
 
-.brand__meta {
+.masthead__status {
   margin: 0;
   color: var(--muted);
   font-size: 0.75rem;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.masthead__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
 }
 
 .app__content {
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  width: 100%;
 }
 
-/* The magnifier scales the content region. `zoom` re-runs layout, so nothing
-   overlaps, nothing is clipped and no horizontal scrollbar appears — which is
-   why it is used instead of `transform: scale`. It applies at every width, so
-   the control behaves identically on a phone and a desktop. */
+/* `zoom` re-runs layout, so magnification never overlaps or clips content and
+   never produces a horizontal scrollbar — which is why it is used instead of
+   `transform: scale`. It applies at every width. */
 @supports (zoom: 1.5) {
   .zoom-region {
     zoom: var(--content-scale);
   }
 }
 
-/* Narrow/older browsers without `zoom`: scale text and the media sizes instead,
-   which still enlarges the reading experience without breaking the layout. */
 @supports not (zoom: 1.5) {
   .zoom-region {
     font-size: calc(1rem * var(--content-scale));
   }
-  .zoom-region .product-card__figure {
-    height: calc(14rem * var(--content-scale));
-  }
-  .zoom-region .connect__title {
-    font-size: calc(clamp(2rem, 7vw, 3.75rem) * var(--content-scale));
-  }
 }
 
-.app__inner {
+/* ------------------------------------------------------------------ stage */
+
+/* The stage is the whole point of the page: one column, centred, generous. */
+.stage {
   width: 100%;
-  max-width: 78rem;
-  margin: 0 auto;
-  padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-8);
+  max-width: var(--column);
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: clamp(var(--space-4), 5vh, var(--space-7)) clamp(var(--space-4), 4vw, var(--space-7))
+    var(--space-6);
   gap: var(--space-5);
 }
 
-.app__foot {
-  padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7)) var(--space-7);
-  max-width: 78rem;
-  margin: 0 auto;
+/* The core is measured from this box. It is given the full column width so the
+   core can grow to be genuinely dominant, and its own height is unconstrained
+   so the circle is never squeezed into a non-square box. */
+.stage__core {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
+}
+
+.stage__core canvas {
+  display: block;
+  aspect-ratio: 1;
+  max-width: 100%;
+}
+
+.stage__state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.stage__label {
+  margin: 0;
+  font-size: clamp(1.05rem, 2.2vw, 1.3rem);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+
+.stage__detail {
+  margin: 0;
+  max-width: var(--measure);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* ---------------------------------------------------------------- invite */
+
+.invite {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  max-width: var(--measure);
+}
+
+.invite__lede {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: clamp(1rem, 2vw, 1.15rem);
+  text-wrap: balance;
+}
+
+.invite__cta {
+  /* The one moment in the product that earns a large target. */
+  min-height: 3.25rem;
+  padding: var(--space-4) var(--space-7);
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.invite__cta:hover:not([disabled]) {
+  transform: translateY(-1px);
+}
+
+.invite__cta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.invite__note {
+  margin: 0;
   color: var(--muted);
   font-size: 0.8rem;
-  border-top: 1px solid var(--line);
+  max-width: 44ch;
 }
 
-/* ------------------------------------------------------------- typography */
+/* -------------------------------------------------------------- composer */
 
-h1,
-h2,
-h3 {
-  margin: 0;
-  line-height: 1.2;
-  letter-spacing: -0.01em;
+.stage__active {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
 }
 
-.section-title {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--muted);
-  margin-bottom: var(--space-3);
+.composer {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "mic field" "hint hint";
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  width: 100%;
+  max-width: 34rem;
+  text-align: left;
 }
 
-/* ---------------------------------------------------------------- surfaces */
-
-.panel {
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  padding: clamp(var(--space-4), 2.5vw, var(--space-6));
-}
-
-.panel--flush {
-  padding: 0;
-  overflow: hidden;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-/* ----------------------------------------------------------------- buttons */
-
-.btn {
-  appearance: none;
+.mic {
+  grid-area: mic;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
-  min-height: var(--tap);
-  padding: var(--space-2) var(--space-4);
+  width: var(--tap);
+  height: var(--tap);
+  border-radius: 50%;
   border: 1px solid var(--line-strong);
-  background: var(--surface-2);
+  background: transparent;
   color: var(--text);
-  border-radius: var(--radius-pill);
-  font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+  transition: border-color 0.18s ease, background 0.18s ease;
 }
 
-.btn:hover:not([disabled]) {
-  background: var(--surface-3);
-  border-color: var(--muted);
+.mic[data-active] {
+  border-color: var(--live);
+  background: color-mix(in srgb, var(--live) 14%, transparent);
+  color: var(--live);
 }
 
-.btn:active:not([disabled]) {
-  transform: translateY(1px);
-}
-
-.btn[disabled] {
+.mic:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.btn--primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--accent-ink);
-  font-weight: 600;
+.mic .glyph {
+  width: 1.35rem;
+  height: 1.35rem;
 }
 
-.btn--primary:hover:not([disabled]) {
-  background: var(--text);
-  border-color: var(--text);
-}
-
-.btn--quiet {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--text-soft);
-}
-
-.btn--danger {
-  background: transparent;
-  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
-  color: var(--danger);
-}
-
-.btn--block {
-  width: 100%;
-}
-
-/* Segmented control, used for contrast / magnification / motion. */
-.segmented {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: 3px;
-  background: var(--surface-2);
+.composer__field {
+  grid-area: field;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: 0 var(--space-2) 0 var(--space-4);
   border: 1px solid var(--line);
   border-radius: var(--radius-pill);
+  background: var(--surface);
 }
 
-.segmented__option {
-  appearance: none;
+.composer__input {
+  flex: 1;
+  min-width: 0;
+  min-height: var(--tap);
   border: 0;
   background: transparent;
-  color: var(--muted);
-  min-height: 2.25rem;
-  padding: 0 var(--space-3);
-  border-radius: var(--radius-pill);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  font-size: 1rem;
 }
 
-.segmented__option:hover {
-  color: var(--text);
+.composer__input:focus {
+  outline: none;
 }
 
-.segmented__option[aria-pressed="true"],
-.segmented__option[aria-checked="true"] {
-  background: var(--surface-3);
-  color: var(--text);
-  box-shadow: inset 0 0 0 1px var(--line-strong);
+/* The field's own ring, so focus is still obvious without the global outline
+   landing twice. */
+.composer__field:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
 }
 
-/* ------------------------------------------------------------------ fields */
-
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.field__label {
-  font-size: 0.8rem;
-  color: var(--muted);
-  letter-spacing: 0.02em;
-}
-
-input[type="text"],
-input[type="search"] {
-  width: 100%;
-  min-height: var(--tap);
-  padding: var(--space-3) var(--space-4);
-  background: var(--surface-2);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  color: var(--text);
-}
-
-input[type="text"]::placeholder {
+.composer__input::placeholder {
   color: var(--muted);
 }
 
-input[type="range"] {
-  width: 100%;
-  min-height: var(--tap);
-  accent-color: var(--accent);
-  background: transparent;
-}
-
-/* ------------------------------------------------- pre-connection landing */
-
-/* The landing fills the viewport, so the magnifier applies to it directly
-   rather than through the scrolling content column. */
-.connect-region {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-}
-
-.connect {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: var(--space-5);
-  padding: var(--space-7) var(--space-4) var(--space-8);
-  min-height: calc(100dvh - 16rem);
-}
-
-.connect__title {
-  font-size: clamp(2rem, 7vw, 3.75rem);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  max-width: 18ch;
-}
-
-.connect__lede {
-  color: var(--text-soft);
-  font-size: clamp(1rem, 2.2vw, 1.2rem);
-  max-width: 42ch;
-  margin: 0;
-}
-
-.connect__action {
-  margin-top: var(--space-2);
-}
-
-.connect__button {
-  min-height: 4.5rem;
-  padding: var(--space-4) var(--space-7);
-  font-size: 1.15rem;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
-  color: var(--accent-ink);
-  border: 1px solid var(--accent);
+.composer__send {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
-  cursor: pointer;
-  box-shadow: var(--shadow-lift);
-  transition: transform 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
-}
-
-.connect__button:hover:not([disabled]) {
-  background: var(--text);
-  transform: translateY(-2px);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6), 0 18px 44px rgba(0, 0, 0, 0.55);
-}
-
-.connect__button:active:not([disabled]) {
-  transform: translateY(0);
-}
-
-.connect__hint {
-  color: var(--muted);
-  font-size: 0.85rem;
-  max-width: 40ch;
-  margin: 0;
-}
-
-.connect__note {
-  color: var(--muted);
-  font-size: 0.8rem;
-  margin: 0;
-  max-width: 52ch;
-}
-
-/* --------------------------------------------------------------- agent orb */
-
-.agent {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: var(--space-4);
-}
-
-.agent__stage {
-  position: relative;
-  display: grid;
-  place-items: center;
-  width: 100%;
-}
-
-.agent__orb {
-  display: block;
-  /* The canvas is decorative; the state is always also given as text. */
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
   border-radius: 50%;
-  opacity: 0.96;
+  background: transparent;
+  color: var(--text-soft);
+  cursor: pointer;
 }
 
-.agent__state {
-  text-align: center;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+.composer__send:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
-.agent__label {
-  margin: 0;
-  font-size: clamp(1.15rem, 2.6vw, 1.5rem);
-  font-weight: 400;
-  letter-spacing: -0.01em;
-  min-height: 1.6em;
+.composer__send .glyph {
+  width: 1.1rem;
+  height: 1.1rem;
 }
 
-/* The label colour reinforces the phase for anyone who can see it, but the
-   phase is never encoded by colour alone — the words are always present, and
-   the orb is purely decorative. */
-.agent__label[data-phase="error"] {
-  color: var(--danger);
-}
-
-.agent__label[data-phase="speaking"] {
-  color: var(--accent);
-}
-
-.agent__label[data-phase="listening"] {
-  color: var(--live);
-}
-
-.agent__detail {
+.composer__hint {
+  grid-area: hint;
   margin: 0;
   color: var(--muted);
-  font-size: 0.9rem;
-  min-height: 1.4em;
+  font-size: 0.78rem;
 }
 
-/* -------------------------------------------------------------- transcript */
+/* ----------------------------------------------------------- conversation */
 
-.transcript {
+.below {
+  width: 100%;
+  max-width: var(--column);
   display: flex;
   flex-direction: column;
+  gap: var(--space-7);
+  padding: 0 clamp(var(--space-4), 4vw, var(--space-7)) var(--space-8);
+}
+
+.conversation {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.conversation__bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: var(--space-4);
-  max-height: min(38vh, 26rem);
-  overflow-y: auto;
-  padding: var(--space-4);
-  scrollbar-width: thin;
+  padding-bottom: var(--space-2);
+  border-bottom: 1px solid var(--line);
 }
 
-.turn {
-  display: grid;
-  gap: var(--space-1);
-  max-width: 46rem;
-}
-
-.turn--user {
-  justify-self: end;
-  text-align: right;
-}
-
-.turn__who {
-  font-size: 0.7rem;
+.conversation__heading,
+.results__heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--muted);
 }
 
-.turn--agent .turn__who {
-  color: var(--accent);
+.conversation__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-height: 26rem;
+  overflow-y: auto;
+  /* Room for the focus ring of a scrolled turn. */
+  padding-inline-end: var(--space-2);
+}
+
+/* A turn is two columns of type: a small speaker label and the sentence. No
+   bubble, no fill — the alternation is carried by alignment and tone. */
+.turn {
+  display: grid;
+  grid-template-columns: 3.25rem minmax(0, 1fr);
+  gap: var(--space-3);
+  align-items: baseline;
+  max-width: var(--measure);
+}
+
+.turn__who {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding-top: 0.2em;
 }
 
 .turn__text {
   margin: 0;
-  font-size: 1.02rem;
-  line-height: 1.55;
-  color: var(--text);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
-.turn--user .turn__text {
+.turn[data-speaker="agent"] .turn__text {
+  color: var(--text);
+}
+
+.turn[data-speaker="user"] .turn__text {
   color: var(--text-soft);
 }
 
-.turn--agent .turn__text {
-  font-size: 1.15rem;
-}
-
-.turn__text[data-partial="true"]::after {
-  content: "";
-  display: inline-block;
-  width: 0.5ch;
-  height: 1.05em;
-  margin-left: 0.15em;
-  vertical-align: -0.15em;
-  background: currentColor;
-  animation: caret 1.1s steps(2, start) infinite;
-}
-
-@keyframes caret {
-  50% {
-    opacity: 0;
-  }
-}
-
-.turn__flag {
-  font-size: 0.75rem;
+/* Streaming text is dimmed, so it is visibly provisional rather than
+   finished — the state is also in the transcript's live region. */
+.turn[data-partial] .turn__text {
   color: var(--muted);
 }
 
-.transcript__empty {
+.turn__cut {
   color: var(--muted);
-  font-size: 0.9rem;
-  margin: 0;
+  font-size: 0.85em;
 }
 
-/* ---------------------------------------------------------------- products */
+/* --------------------------------------------------------------- results */
+
+.results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
 
 .results__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 17rem), 1fr));
-  gap: var(--space-4);
+  list-style: none;
   margin: 0;
   padding: 0;
-  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-6) var(--space-5);
 }
 
-.product-card {
+.results__item {
+  list-style: none;
+  min-width: 0;
+}
+
+.product {
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
+  gap: var(--space-3);
   height: 100%;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.product-card:hover,
-.product-card:focus-within {
-  border-color: var(--line-strong);
-  box-shadow: var(--shadow-lift);
-}
-
-.product-card__figure {
+.product__shot {
   position: relative;
-  margin: 0;
-  height: 14rem;
-  background: var(--bg-deep);
-  border-bottom: 1px solid var(--line);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-}
-
-.product-card__image {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: var(--surface-2);
+  border-radius: var(--radius);
+  overflow: hidden;
+  cursor: pointer;
+  aspect-ratio: 4 / 5;
 }
 
-.product-card__image--missing {
+.product__img {
+  display: block;
   width: 100%;
   height: 100%;
-  display: grid;
-  place-items: center;
-  color: var(--muted);
-  font-size: 0.8rem;
+  object-fit: cover;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.product-card__tag {
+.product__shot:hover .product__img,
+.product__shot:focus-visible .product__img {
+  transform: scale(1.03);
+}
+
+.product__flag {
   position: absolute;
-  top: var(--space-3);
-  left: var(--space-3);
-  font-size: 0.68rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--text-soft);
-  background: color-mix(in srgb, var(--bg-deep) 78%, transparent);
-  border: 1px solid var(--line);
+  inset-inline-start: var(--space-3);
+  inset-block-end: var(--space-3);
+  padding: 0.2rem var(--space-2);
   border-radius: var(--radius-pill);
-  padding: 0.15rem 0.6rem;
+  background: color-mix(in srgb, var(--bg) 82%, transparent);
+  color: var(--text-soft);
+  font-size: 0.7rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.product-card__body {
-  padding: var(--space-4);
+.product__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  flex: 1;
+  gap: var(--space-1);
 }
 
-.product-card__name {
-  font-size: 1.05rem;
-  font-weight: 500;
-}
-
-.product-card__price {
-  font-size: 1.15rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.product-card__rating {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  color: var(--text-soft);
-  font-size: 0.85rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.product-card__rating-star {
-  color: var(--warn);
-}
-
-.product-card__specs {
+.product__category {
   margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-2);
-}
-
-.product-card__specs li {
-  font-size: 0.75rem;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm);
-  padding: 0.1rem 0.45rem;
-}
-
-.product-card__visual {
-  margin: 0;
-  font-size: 0.88rem;
-  color: var(--text-soft);
-  border-left: 2px solid var(--accent);
-  padding-left: var(--space-3);
-}
-
-.product-card__visual strong {
-  display: block;
   font-size: 0.68rem;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--muted);
-  font-weight: 600;
-  margin-bottom: 0.15rem;
 }
 
-.product-card__foot {
-  margin-top: auto;
-  padding-top: var(--space-3);
-}
-
-.product-card__oos {
+.product__name {
   margin: 0;
-  color: var(--danger);
+  font-size: 0.98rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.product__price {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.product__desc {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.product__actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+/* The one product being talked about right now. Signalled by an outline, not by
+   colour alone, so it survives a greyscale or forced-colours rendering. */
+.product[data-spotlight] .product__shot {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.product[data-spotlight] .product__name {
+  color: var(--accent);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.25rem;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.btn--ghost:hover:not([disabled]) {
+  border-color: var(--text-soft);
+}
+
+.btn--solid {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+
+.btn--solid:hover:not([disabled]) {
+  opacity: 0.88;
+}
+
+.btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn--wide {
+  width: 100%;
+  min-height: var(--tap);
+}
+
+.linkish {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.linkish:hover:not([disabled]) {
+  color: var(--text);
+}
+
+.linkish:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------- cart */
+
+.cartbar {
+  display: inline-flex;
+  align-items: center;
+}
+
+.cartbar__toggle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.cartbar__toggle:hover {
+  border-color: var(--line-strong);
+}
+
+.cartbar__label {
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+}
+
+.cartbar__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.4rem;
+  height: 1.4rem;
+  padding-inline: 0.35rem;
+  border-radius: var(--radius-pill);
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.cartbar__total {
+  font-variant-numeric: tabular-nums;
+}
+
+.drawer-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: color-mix(in srgb, var(--bg-deep) 55%, transparent);
+}
+
+.drawer {
+  position: fixed;
+  inset-block: 0;
+  inset-inline-end: 0;
+  z-index: 50;
+  width: min(24rem, 100vw);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  overflow-y: auto;
+  background: var(--surface);
+  border-inline-start: 1px solid var(--line);
+}
+
+.drawer__bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.drawer__heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.drawer__muted {
+  color: var(--muted);
+  font-weight: 400;
   font-size: 0.85rem;
 }
 
-/* The card the agent is talking about right now. */
-.product-card--speaking {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
+.drawer__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.88rem;
 }
 
-.product-card--speaking .product-card__figure::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border: 1px solid var(--accent);
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-/* -------------------------------------------------------------------- cart */
-
-.cart-lines {
+.lines {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -811,353 +818,311 @@ input[type="range"] {
   flex-direction: column;
 }
 
-.cart-line {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  padding: var(--space-3) 0;
+.lines__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "name price" "remove remove";
+  gap: var(--space-1) var(--space-3);
+  align-items: baseline;
+  padding-block: var(--space-3);
   border-bottom: 1px solid var(--line);
 }
 
-.cart-line__name {
-  font-weight: 500;
+.lines__name {
+  grid-area: name;
+  font-size: 0.88rem;
 }
 
-.cart-totals {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin-top: var(--space-4);
+.lines__qty {
+  color: var(--muted);
+}
+
+.lines__price {
+  grid-area: price;
+  font-size: 0.88rem;
+  color: var(--text-soft);
   font-variant-numeric: tabular-nums;
 }
 
-.cart-totals__row {
+.lines__remove {
+  grid-area: remove;
+  justify-self: start;
+}
+
+.totals {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.totals__row {
   display: flex;
   justify-content: space-between;
   gap: var(--space-3);
+  font-size: 0.85rem;
   color: var(--text-soft);
 }
 
-.cart-totals__row--total {
-  color: var(--text);
-  font-weight: 600;
-  font-size: 1.05rem;
-  border-top: 1px solid var(--line-strong);
-  padding-top: var(--space-3);
-  margin-top: var(--space-1);
+.totals__row dt,
+.totals__row dd {
+  margin: 0;
 }
 
-.cart-totals__row--discount {
+.totals__row dd {
+  font-variant-numeric: tabular-nums;
+}
+
+.totals__row--credit {
   color: var(--live);
 }
 
-.form-row {
+.totals__row--grand {
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--line);
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.coupon {
   display: flex;
   gap: var(--space-2);
-  flex-wrap: wrap;
-  align-items: flex-end;
 }
 
-.form-row .field {
-  flex: 1 1 12rem;
-}
-
-/* ---------------------------------------------------------------- controls */
-
-.controls {
-  margin: 0;
-  border: 0;
-  padding: 0;
+.coupon__input {
+  flex: 1;
   min-width: 0;
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: var(--bg-deep);
+}
+
+/* ------------------------------------------------- confirmation and notices */
+
+.confirmed {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  max-width: 30rem;
+  padding: var(--space-6) var(--space-5);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.confirmed__kicker {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--live);
+}
+
+.confirmed__title {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.25rem);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.confirmed__meta {
+  margin: 0;
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.confirmed__meta div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.confirmed__meta dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.confirmed__meta dd {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.confirmed .btn {
+  margin-top: var(--space-3);
+}
+
+.confirm {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 30rem;
+  padding: var(--space-5);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+}
+
+.confirm__text {
+  margin: 0;
+  color: var(--text-soft);
+  font-size: 0.9rem;
+}
+
+.notice {
+  margin: 0;
+  max-width: 40rem;
+  padding: var(--space-3) var(--space-4);
+  border-inline-start: 2px solid var(--line-strong);
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  text-align: start;
+}
+
+.notice--error {
+  border-inline-start-color: var(--danger);
+  color: var(--danger);
+}
+
+.app__foot {
+  padding: var(--space-5) clamp(var(--space-4), 4vw, var(--space-7));
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.app__foot p {
+  margin: 0;
+  max-width: var(--column);
+  margin-inline: auto;
+}
+
+/* ------------------------------------------------- accessibility controls */
+
+/* The settings group is styled by AccessibilityControls' own class names, so the
+   control surface matches the composer and the cart. */
+.controls {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
 }
 
 .controls__summary {
   display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  background: var(--surface-2);
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 2.25rem;
+  padding: 0 var(--space-3);
+  font-size: 0.75rem;
+  color: var(--text-soft);
   cursor: pointer;
   list-style: none;
-  min-height: var(--tap);
 }
 
 .controls__summary::-webkit-details-marker {
   display: none;
 }
 
-.controls__summary::after {
-  content: "▾";
-  color: var(--muted);
-  font-size: 0.8rem;
-}
-
-.controls[open] > .controls__summary::after {
-  content: "▴";
-}
-
-.controls__summary:hover {
-  border-color: var(--line-strong);
-  color: var(--text);
-}
-
 .controls__summary-label {
-  font-size: 0.72rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--text-soft);
+  font-size: 0.7rem;
   white-space: nowrap;
 }
 
-/* The collapsed summary still reports the live values, so a setting is never
-   invisible — the user does not have to open the panel to know it applied. */
 .controls__summary-values {
-  font-size: 0.75rem;
   color: var(--muted);
-  font-variant-numeric: tabular-nums;
+  font-size: 0.7rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .controls__body {
   display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  gap: var(--space-4) var(--space-5);
-  padding-top: var(--space-4);
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-top: 1px solid var(--line);
+  max-width: 19rem;
 }
 
 .control {
   display: flex;
   flex-direction: column;
   gap: var(--space-1);
-  border: 0;
   margin: 0;
   padding: 0;
+  border: 0;
   min-width: 0;
-}
-
-.control--range {
-  min-width: 9rem;
 }
 
 .control__legend,
 .control__label {
-  font-size: 0.72rem;
+  padding: 0;
+  font-size: 0.7rem;
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--muted);
-  padding: 0;
 }
 
 .control__value {
-  color: var(--text);
-  font-variant-numeric: tabular-nums;
-  text-transform: none;
-  letter-spacing: 0;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
+  color: var(--muted);
 }
 
 .control__value--warn {
   color: var(--warn);
 }
 
-/* ------------------------------------------------------------- voice panel */
-
-.voice {
+.segmented {
   display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.voice__row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-4);
+  gap: var(--space-1);
   flex-wrap: wrap;
 }
 
-.mic {
-  position: relative;
-  display: inline-grid;
-  place-items: center;
-  width: 4.5rem;
-  height: 4.5rem;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  border: 1px solid var(--line-strong);
-  background: var(--surface-2);
-  color: var(--text);
+.segmented__option {
+  min-height: 2rem;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-soft);
+  font-size: 0.75rem;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
 
-.mic:hover:not([disabled]) {
-  background: var(--surface-3);
-  border-color: var(--muted);
-}
-
-.mic[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.mic[data-active="true"] {
+.segmented__option[aria-pressed="true"] {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-ink);
 }
 
-.mic__ring {
-  position: absolute;
-  inset: -0.4rem;
-  border-radius: 50%;
-  border: 1px solid var(--accent);
-  opacity: 0;
-  pointer-events: none;
+.segmented__option:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
-.mic[data-active="true"] .mic__ring {
-  animation: ring 2.4s ease-out infinite;
-}
-
-@keyframes ring {
-  0% {
-    opacity: 0.5;
-    transform: scale(0.9);
-  }
-  70%,
-  100% {
-    opacity: 0;
-    transform: scale(1.25);
-  }
-}
-
-.voice__status {
-  display: flex;
-  flex-direction: column;
-  gap: 0.1rem;
-  min-width: 0;
-}
-
-.voice__status-main {
-  font-size: 0.95rem;
-  color: var(--text);
-}
-
-.voice__status-sub {
-  font-size: 0.82rem;
-  color: var(--muted);
-}
-
-.voice__form {
-  display: flex;
-  gap: var(--space-2);
-}
-
-.voice__form input {
-  flex: 1;
-}
-
-.notice {
-  margin: 0;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--warn);
-  border-radius: var(--radius);
-  background: var(--surface-2);
-  color: var(--text-soft);
-  font-size: 0.9rem;
-}
-
-.notice--error {
-  border-left-color: var(--danger);
-}
-
-.notice--good {
-  border-left-color: var(--live);
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--muted);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-pill);
-  padding: 0.15rem 0.55rem;
-}
-
-.badge--live {
-  color: var(--live);
-  border-color: color-mix(in srgb, var(--live) 40%, transparent);
-}
-
-.dot {
-  width: 0.45rem;
-  height: 0.45rem;
-  border-radius: 50%;
-  background: currentColor;
-  flex: 0 0 auto;
-}
-
-.dot--pulse {
-  animation: dot 1.6s ease-in-out infinite;
-}
-
-@keyframes dot {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.25;
-  }
-}
-
-/* --------------------------------------------------------------- utilities */
-
-.stack {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-}
-
-.cluster {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-}
-
-.grid-2 {
-  display: grid;
-  gap: var(--space-4);
-  grid-template-columns: 1fr;
-}
-
-@media (min-width: 64rem) {
-  .grid-2 {
-    grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
-    align-items: start;
-  }
-}
-
-.checkout-confirm {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
+.control--range input[type="range"] {
+  width: 100%;
+  min-height: 2rem;
+  accent-color: var(--accent);
 }
 
 /* --------------------------------------------------------- reduced motion */
 
-/* The application setting (data-reduced-motion="on") and the OS setting both
-   apply. The orb additionally stops animating via JavaScript. */
+/* The in-app setting and the OS setting both apply. The core additionally
+   stops animating in JavaScript, so it paints one static frame. */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -1178,52 +1143,70 @@ input[type="range"] {
   scroll-behavior: auto !important;
 }
 
-/* Under reduced motion, hover/focus must still be obvious — it just cannot
-   animate. */
-.btn:hover:not([disabled]),
-.product-card:hover {
+/* Hover and focus stay obvious under reduced motion; they just do not animate. */
+.product__img,
+.btn,
+.mic,
+.invite__cta,
+.cartbar__toggle {
   transition: none;
 }
 
 /* ------------------------------------------------------------------ mobile */
 
 @media (max-width: 40rem) {
-  :root {
-    --space-5: 1.25rem;
-    --space-6: 1.5rem;
-  }
-
-  .app__inner {
-    padding-top: var(--space-4);
+  .stage {
+    padding-top: var(--space-5);
     gap: var(--space-4);
   }
 
-  .transcript {
-    max-height: none;
+  .below {
+    gap: var(--space-6);
   }
 
-  .product-card__figure {
-    height: 12rem;
+  .results__grid {
+    grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
+    gap: var(--space-5) var(--space-4);
   }
 
-  .controls__body {
-    gap: var(--space-3);
+  .conversation__list {
+    max-height: 22rem;
   }
 
-  .connect__button {
+  .turn {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-1);
+  }
+
+  .drawer {
+    /* A bottom sheet reads better than a side panel on a phone. */
+    inset-block: auto 0;
+    inset-inline: 0;
     width: 100%;
-    justify-content: center;
+    max-height: 82dvh;
+    border-inline-start: 0;
+    border-top: 1px solid var(--line);
+  }
+
+  .invite__cta {
+    width: 100%;
   }
 }
 
-/* Forced-colors / high-contrast mode: let the OS palette win, but keep the
-   structure and the focus ring obvious. */
+/* Forced-colours mode: let the OS palette win, but keep structure, the
+   spotlight and the focus ring obvious. */
 @media (forced-colors: active) {
   .btn,
-  .panel,
-  .product-card,
-  .turn__text {
+  .controls,
+  .mic,
+  .cartbar__toggle,
+  .product__shot,
+  .confirm {
     border: 1px solid CanvasText;
+  }
+
+  .product[data-spotlight] .product__shot {
+    outline: 3px solid Highlight;
   }
 
   :focus-visible {

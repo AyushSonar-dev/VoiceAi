@@ -20,69 +20,115 @@ const nextId = () => `m${++counter}`;
 const tidy = (text: string) => text.replace(/\s+/g, " ").trim();
 
 /**
- * The conversation history, built from the events the existing voice-agent
- * session already emits. Presentation state only — nothing here is sent to the
- * backend, which still owns every fact in the conversation.
+ * The one rule that decides how a piece of text lands in the conversation.
  *
- * The two streaming events are NOT the same shape, which is the subtle part:
- * `transcript.user.delta` carries the CUMULATIVE text for the turn so far, so
- * each one supersedes the last, while `transcript.agent.delta` carries only the
- * newly spoken words and must be appended. Getting this backwards shows the user
- * "H He Hel Hello", so the two are separate methods rather than one guess.
+ * Kept pure and separate from the hook so it can be tested directly, because
+ * getting this wrong is what makes a reply appear twice.
+ *
+ * Three things have to hold:
+ *
+ * 1. The two streaming events are not the same shape. `transcript.user.delta`
+ *    carries the CUMULATIVE text for the turn so far, so each one supersedes the
+ *    last; `transcript.agent.delta` carries only the newly spoken words and must
+ *    be appended. The caller chooses which to call, because guessing here
+ *    renders the user as "H He Hel Hello".
+ *
+ * 2. A turn that is still streaming keeps a stable id, so React reuses the same
+ *    DOM node and the text visibly grows in place rather than piling up.
+ *
+ * 3. A final message identical to the message right before it is the same turn
+ *    arriving twice, so it folds into the existing entry. That is what makes each
+ *    real message exist exactly once in state, and therefore get announced
+ *    exactly once — the fix is in the state, not hidden in the view.
+ */
+export function applyWrite(
+  prev: TranscriptMessage[],
+  speaker: Speaker,
+  text: string,
+  partial: boolean,
+  interrupted: boolean | undefined,
+  openId: string | null,
+  makeId: () => string
+): { messages: TranscriptMessage[]; openId: string | null } {
+  const clean = tidy(text);
+  if (!clean) return { messages: prev, openId };
+
+  // Continue the turn that is already on screen.
+  if (openId) {
+    const index = prev.findIndex((m) => m.id === openId);
+    if (index >= 0) {
+      const next = [...prev];
+      next[index] = { ...next[index], text: clean, partial, interrupted };
+      // A final message is sealed, so a delta arriving afterwards starts a new
+      // turn instead of overwriting what was already said.
+      return { messages: next, openId: partial ? openId : null };
+    }
+  }
+
+  // The same final message twice in a row is one message, not two.
+  const tail = prev[prev.length - 1];
+  if (!partial && tail && tail.speaker === speaker && !tail.partial && tail.text === clean) {
+    const next = [...prev];
+    next[prev.length - 1] = { ...tail, interrupted };
+    return { messages: next, openId: null };
+  }
+
+  const id = makeId();
+  return {
+    messages: [...prev, { id, speaker, text: clean, partial, interrupted }],
+    openId: partial ? id : null,
+  };
+}
+
+/**
+ * The conversation history, built from the events the existing voice-agent
+ * session already emits. Presentation state only — the backend still owns every
+ * fact in the conversation.
+ *
+ * The message list is mirrored in a ref so every event is applied synchronously
+ * against the current list. A burst of deltas inside one React tick therefore
+ * cannot read a stale value and drop words, and no id is ever allocated inside a
+ * state updater, which React may invoke more than once.
  */
 export function useTranscript() {
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
-  const open = useRef<{ user: string | null; agent: string | null }>({ user: null, agent: null });
+  const messagesRef = useRef<TranscriptMessage[]>([]);
+  const open = useRef<{ user: string | null; agent: string | null }>({
+    user: null,
+    agent: null,
+  });
+  const buffers = useRef<{ user: string; agent: string }>({ user: "", agent: "" });
 
-  const idFor = (speaker: Speaker) => open.current[speaker];
-
-  /** Write into the in-flight message, or start one. */
-  const write = useCallback(
-    (speaker: Speaker, text: string, partial: boolean, interrupted?: boolean) => {
-      const clean = tidy(text);
-      if (!clean) return;
-      setMessages((prev) => {
-        const openId = open.current[speaker];
-        if (openId) {
-          const index = prev.findIndex((m) => m.id === openId);
-          if (index >= 0) {
-            const next = [...prev];
-            next[index] = { ...next[index], text: clean, partial, interrupted };
-            return next;
-          }
-        }
-        const message: TranscriptMessage = {
-          id: nextId(),
-          speaker,
-          text: clean,
-          partial,
-          interrupted,
-        };
-        open.current[speaker] = message.id;
-        return [...prev, message];
-      });
+  const run = useCallback(
+    (
+      speaker: Speaker,
+      text: string,
+      partial: boolean,
+      interrupted?: boolean
+    ): void => {
+      const result = applyWrite(
+        messagesRef.current,
+        speaker,
+        text,
+        partial,
+        interrupted,
+        open.current[speaker],
+        nextId
+      );
+      messagesRef.current = result.messages;
+      open.current[speaker] = result.openId;
+      setMessages(result.messages);
     },
     []
   );
 
-  /**
-   * Cumulative partial: the provider resends the whole utterance each time, so
-   * the newest value replaces whatever was shown. Used for the user.
-   */
+  /** Cumulative partial: the newest value replaces whatever was on screen. */
   const setPartial = useCallback(
-    (speaker: Speaker, cumulativeText: string) => {
-      write(speaker, cumulativeText, true);
-    },
-    [write]
+    (speaker: Speaker, cumulativeText: string) => run(speaker, cumulativeText, true),
+    [run]
   );
 
-  /**
-   * Incremental partial: the provider sends only the new words, so they are
-   * appended to the buffer already on screen. Used for the agent. The buffer is
-   * read from a ref, not from state, so a burst of deltas in one tick can't
-   * read a stale value and lose words.
-   */
-  const buffers = useRef<{ user: string; agent: string }>({ user: "", agent: "" });
+  /** Incremental partial: append the new words to what is already on screen. */
   const appendPartial = useCallback(
     (speaker: Speaker, chunk: string) => {
       const addition = tidy(chunk);
@@ -91,45 +137,47 @@ export function useTranscript() {
         ? `${buffers.current[speaker]} ${addition}`
         : addition;
       buffers.current[speaker] = next;
-      write(speaker, next, true);
+      run(speaker, next, true);
     },
-    [write]
+    [run]
   );
 
   /** The final, authoritative text for this turn. */
   const commit = useCallback(
     (speaker: Speaker, text: string) => {
       buffers.current[speaker] = "";
-      write(speaker, text, false);
-      open.current[speaker] = null;
+      run(speaker, text, false);
     },
-    [write]
+    [run]
   );
 
   /** Closes a streamed reply, flagging it if the user cut in. */
   const closeAgentReply = useCallback((interrupted: boolean) => {
     buffers.current.agent = "";
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.speaker === "agent" && m.partial ? { ...m, partial: false, interrupted } : m
-      )
-    );
     open.current.agent = null;
+    const next = messagesRef.current.map((m) =>
+      m.speaker === "agent" && m.partial ? { ...m, partial: false, interrupted } : m
+    );
+    messagesRef.current = next;
+    setMessages(next);
   }, []);
 
-  /** A fresh turn begins: any previous open bubble is now final. */
+  /** A fresh turn begins, so anything still streaming is now final. */
   const sealOpen = useCallback((speaker: Speaker) => {
     buffers.current[speaker] = "";
-    setMessages((prev) =>
-      prev.map((m) => (m.speaker === speaker && m.partial ? { ...m, partial: false } : m))
-    );
     open.current[speaker] = null;
+    const next = messagesRef.current.map((m) =>
+      m.speaker === speaker && m.partial ? { ...m, partial: false } : m
+    );
+    messagesRef.current = next;
+    setMessages(next);
   }, []);
 
   const clear = useCallback(() => {
-    setMessages([]);
+    messagesRef.current = [];
     open.current = { user: null, agent: null };
     buffers.current = { user: "", agent: "" };
+    setMessages([]);
   }, []);
 
   return { messages, setPartial, appendPartial, commit, closeAgentReply, sealOpen, clear };

@@ -1,74 +1,87 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { motion, useReducedMotion } from "framer-motion";
 import type { TranscriptMessage } from "@/lib/transcript";
 
 interface Props {
   messages: TranscriptMessage[];
   reducedMotion: boolean;
-  /** the most recent completed agent message, announced politely on arrival */
-  announcement: string;
+  onClear: () => void;
 }
 
 /**
- * The conversation, as real semantic text in the DOM — selectable, searchable
- * and readable by assistive technology. Only the last completed agent message
- * is announced; streaming deltas and the orb's motion are never announced, so a
- * screen reader isn't flooded by animation.
+ * The conversation, rendered as typography rather than a card.
+ *
+ * The list is a `role="log"`, so assistive technology can navigate the history,
+ * but it is deliberately NOT itself a live region. Announcing a container whose
+ * text grows on every delta would read the reply out dozens of times, and a
+ * reply that is also spoken by the agent would be delivered twice over.
+ *
+ * Instead, one dedicated live region below the list holds the text of the most
+ * recent *completed* message and nothing else. Streaming text never enters it,
+ * so each real message is announced exactly once — when it finishes.
  */
-export function Transcript({ messages, reducedMotion, announcement }: Props) {
+export function Transcript({ messages, reducedMotion, onClear }: Props) {
   const endRef = useRef<HTMLDivElement | null>(null);
+  const libReduced = useReducedMotion();
+  const still = reducedMotion || libReduced === true;
+
+  const latestFinal = findLatestFinal(messages);
 
   useEffect(() => {
-    // Follow the conversation, but only when the user is already at the bottom
-    // so scrolling back to re-read isn't yanked away.
-    const el = endRef.current;
-    if (!el) return;
-    const nearest = el.closest(".transcript");
-    if (!nearest) return;
-    const distance = nearest.scrollHeight - nearest.scrollTop - nearest.clientHeight;
-    if (distance < 160) nearest.scrollTop = nearest.scrollHeight;
-  }, [messages]);
+    endRef.current?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "end" });
+  }, [messages, still]);
+
+  if (messages.length === 0) return null;
 
   return (
-    <section className="panel panel--flush" aria-labelledby="transcript-heading">
-      <h2 id="transcript-heading" className="sr-only">
-        Conversation transcript
-      </h2>
-
-      {/* One polite announcement for the newest finished reply. */}
-      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {announcement}
-      </p>
-
-      <div className="transcript" tabIndex={0} role="log" aria-label="Conversation">
-        {messages.length === 0 ? (
-          <p className="transcript__empty">
-            Nothing said yet. Try “find me a white dress under 2000”.
-          </p>
-        ) : (
-          <AnimatePresence initial={false}>
-            {messages.map((m) => (
-              <motion.article
-                key={m.id}
-                className={`turn turn--${m.speaker}`}
-                initial={reducedMotion ? false : { opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-                transition={{ duration: reducedMotion ? 0 : 0.28, ease: [0.22, 0.61, 0.36, 1] }}
-              >
-                <span className="turn__who">{m.speaker === "user" ? "You" : "Echo"}</span>
-                <p className="turn__text" data-partial={m.partial ? "true" : "false"}>
-                  {m.text}
-                </p>
-                {m.interrupted ? <p className="turn__flag">(interrupted)</p> : null}
-              </motion.article>
-            ))}
-          </AnimatePresence>
-        )}
-        <div ref={endRef} />
+    <section className="conversation" aria-labelledby="conversation-heading">
+      <div className="conversation__bar">
+        <h2 id="conversation-heading" className="conversation__heading">
+          Conversation
+        </h2>
+        <button type="button" className="linkish" onClick={onClear}>
+          Clear
+        </button>
       </div>
+
+      <ol className="conversation__list" role="log" aria-label="Conversation">
+        {messages.map((message) => (
+          <motion.li
+            key={message.id}
+            className="turn"
+            data-speaker={message.speaker}
+            data-partial={message.partial || undefined}
+            initial={still ? false : { opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: still ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
+          >
+            <span className="turn__who" aria-hidden="true">
+              {message.speaker === "user" ? "You" : "Echo"}
+            </span>
+            <p className="turn__text">
+              {message.text}
+              {message.interrupted ? <span className="turn__cut"> — cut short</span> : null}
+            </p>
+          </motion.li>
+        ))}
+        <div ref={endRef} />
+      </ol>
+
+      <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {latestFinal
+          ? `${latestFinal.speaker === "user" ? "You said" : "Echo said"}: ${latestFinal.text}`
+          : ""}
+      </span>
     </section>
   );
+}
+
+/** The newest message that has stopped streaming, or `null` if none has. */
+function findLatestFinal(messages: TranscriptMessage[]): TranscriptMessage | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    if (!messages[i].partial) return messages[i];
+  }
+  return null;
 }

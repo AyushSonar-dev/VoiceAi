@@ -8,10 +8,58 @@
  * API call fails, because there is nothing listening on the backend port.
  *
  * Both children get a colour-coded prefix, and Ctrl+C stops both.
+ *
+ * Before starting anything, the ports are checked. A second copy of this script
+ * — or a backend left running from an earlier session — otherwise starts a
+ * process that cannot bind, which shows up as a confusing crash and leaves a
+ * watcher alive holding a half-built `.next` cache.
  */
 import { spawn } from "node:child_process";
+import { createConnection } from "node:net";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+
+const backendPort = Number(process.env.PORT || 4000);
+const frontendPort = Number(process.env.FRONTEND_PORT || 3000);
+
+const ports = [
+  { name: "backend", port: backendPort },
+  { name: "frontend", port: frontendPort },
+];
+
+/** Resolves true if something is already listening on the port. */
+function inUse(port) {
+  return new Promise((resolve) => {
+    const socket = createConnection({ port, host: "127.0.0.1" });
+    const done = (result) => {
+      socket.destroy();
+      resolve(result);
+    };
+    socket.setTimeout(1000);
+    socket.once("connect", () => done(true));
+    socket.once("timeout", () => done(false));
+    socket.once("error", () => done(false));
+  });
+}
+
+const busy = [];
+for (const { name, port } of ports) {
+  if (await inUse(port)) busy.push({ name, port });
+}
+
+if (busy.length > 0) {
+  console.error("Port(s) already in use — not starting a second copy:\n");
+  for (const { name, port } of busy) {
+    console.error(`  ${name.padEnd(8)} port ${port} is already serving something`);
+  }
+  console.error(
+    "\nIf that is the app itself, you already have it running — just reload the page."
+  );
+  console.error(
+    "Otherwise stop the process holding the port and run `npm run dev` again."
+  );
+  process.exit(1);
+}
 
 const targets = [
   { name: "backend", color: "[36m", args: ["run", "dev", "--workspace=backend"] },
