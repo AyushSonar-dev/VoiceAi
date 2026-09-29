@@ -49,6 +49,11 @@ export const config = {
   elevenLabsKey: process.env.ELEVENLABS_API_KEY || "",
   elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
+  // Voice settings for natural, human-like speech (multilingual v2 supports bilingual)
+  elevenLabsStability: Number(process.env.ELEVENLABS_STABILITY || 0.4),
+  elevenLabsSimilarityBoost: Number(process.env.ELEVENLABS_SIMILARITY_BOOST || 0.85),
+  elevenLabsStyle: Number(process.env.ELEVENLABS_STYLE || 0.6),
+  elevenLabsUseSpeakerBoost: process.env.ELEVENLABS_USE_SPEAKER_BOOST !== "false",
 
   // ---------------------------------------------------------------------
   // LLM PROVIDER (conversation brain)

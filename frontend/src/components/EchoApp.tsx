@@ -179,10 +179,16 @@ export function EchoApp() {
         setSessionId(id);
         const s = await getState(id);
         if (!cancelled) {
-          stateRef.current = s;
-          setEchoState(s);
-          // A returning shopper with results already goes to the shopping view.
-          if (s.recentProducts.length > 0) setConnected(true);
+          // Treat product suggestions as ephemeral: start fresh on browser reload.
+          // Keep cart, lastAction, lastOrder from server; drop recentProducts for display.
+          const freshState: EchoState = {
+            ...s,
+            recentProducts: [],
+          };
+          stateRef.current = freshState;
+          setEchoState(freshState);
+          // Do not auto-connect just because the session had prior results.
+          // User must initiate a new search/voice request.
         }
       } catch {
         if (!cancelled)
