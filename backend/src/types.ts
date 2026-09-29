@@ -64,6 +64,8 @@ export interface ProductFilter {
   minRating?: number;
   q?: string;
   limit?: number;
+  /** Cursor for pagination - the productId to start after (exclusive) */
+  cursor?: string;
 }
 
 export interface CartItem {
@@ -114,6 +116,24 @@ export interface ConversationSession {
   /** THE only product ids a model may reference this turn. Most-recent-first. */
   recentProductIds: string[];
   lastAction: LastAction | null;
+
+  // --- Extended conversational memory fields ---
+  /** The product currently being discussed (for follow-up questions). */
+  currentProductId?: string | null;
+  /** The most recent search query for context. */
+  recentSearchQuery?: string | null;
+  /** The category of the recent search. */
+  recentCategory?: string | null;
+  /** The inferred intent of the recent interaction. */
+  recentIntent?: string | null;
+  /** Bounded history of product references with context (max 10). */
+  recentProductReferences?: Array<{
+    productId: string;
+    context: string;
+    timestamp: number;
+  }>;
+  /** Bounded conversation turn count. */
+  turnCount?: number;
 }
 
 /** Standard envelope every tool returns. */

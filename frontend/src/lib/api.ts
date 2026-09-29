@@ -1,9 +1,16 @@
 import type { Capabilities, EchoState, SseEvent, ToolResult, TurnEvents, VoiceAgentSetup } from "@/types";
 
-async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
+const DEFAULT_FETCH_OPTS: RequestInit = {
+  credentials: "include",
+};
+
+/**
+ * Internal helper for testing - not part of public API.
+ */
+export async function readJson<T>(url: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
-    res = await fetch(url, init);
+    res = await fetch(url, { ...DEFAULT_FETCH_OPTS, ...init });
   } catch {
     // The request never left Next: usually the dev server itself is not up.
     throw new Error(`the site could not reach its own server (${url})`);
@@ -29,8 +36,9 @@ export async function getCapabilities(): Promise<Capabilities> {
   return readJson<Capabilities>("/api/capabilities");
 }
 
-export async function getState(sessionId: string): Promise<EchoState> {
-  return readJson<EchoState>(`/api/state/${encodeURIComponent(sessionId)}`);
+export async function getState(): Promise<EchoState> {
+  // No sessionId needed - comes from auth cookie
+  return readJson<EchoState>("/api/state");
 }
 
 /**
@@ -49,13 +57,12 @@ export async function getVoiceSetup(): Promise<VoiceAgentSetup> {
  */
 export async function callTool(
   name: string,
-  args: Record<string, unknown>,
-  sessionId: string
+  args: Record<string, unknown>
 ): Promise<ToolResult> {
   return readJson<ToolResult>(`/api/tools/${encodeURIComponent(name)}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ...args, sessionId }),
+    body: JSON.stringify(args), // sessionId comes from auth cookie
   });
 }
 
@@ -64,14 +71,14 @@ export async function callTool(
  * so the UI can announce the "let me check that" filler while the tools run.
  */
 export async function postTurn(input: {
-  sessionId: string;
   text?: string;
   audioBase64?: string;
 }): Promise<TurnEvents> {
   const res = await fetch("/api/voice", {
     method: "POST",
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(input),
+    body: JSON.stringify(input), // sessionId comes from auth cookie
   });
   if (!res.ok || !res.body) throw new Error(`voice request failed: ${res.status}`);
 

@@ -85,6 +85,16 @@ export const config = {
   geminiModel: process.env.GEMINI_MODEL || "gemini-3.8-flash",
 
   currency: process.env.CURRENCY || "\u20b9", // RUPEE SIGN
+
+  // ---------------------------------------------------------------------
+  // AUTH / SESSION
+  // ---------------------------------------------------------------------
+  // Frontend origin for CORS and cookie configuration.
+  frontendOrigin: process.env.FRONTEND_ORIGIN || "http://localhost:3000",
+  // Secret for signing session tokens. In production, set a strong random value.
+  sessionSecret: process.env.SESSION_SECRET || "dev-secret-change-in-production",
+  // Session token cookie name
+  sessionCookieName: "echolabs_session",
 } as const;
 
 export type Config = typeof config;

@@ -32,14 +32,14 @@ export const TEXT_SIZE_MIN = 85;
 export const TEXT_SIZE_MAX = 160;
 export const MAGNIFY_STEPS: Magnify[] = [100, 125, 150, 200];
 
-const DEFAULTS: Prefs = {
+export const DEFAULTS: Prefs = {
   theme: "dark",
   textSizePercent: 100,
   magnify: 100,
   reducedMotion: null,
 };
 
-function readString(key: string): string | null {
+export function readString(key: string): string | null {
   try {
     return localStorage.getItem(key);
   } catch {
@@ -47,25 +47,25 @@ function readString(key: string): string | null {
   }
 }
 
-function readNumber(key: string): number | null {
+export function readNumber(key: string): number | null {
   const raw = readString(key);
   if (raw === null) return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : null;
 }
 
-function readBool(key: string): boolean | null {
+export function readBool(key: string): boolean | null {
   const raw = readString(key);
   if (raw === "true") return true;
   if (raw === "false") return false;
   return null;
 }
 
-function clamp(value: number, min: number, max: number): number {
+export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function readPrefs(): Prefs {
+export function readPrefs(): Prefs {
   const theme = readString(KEYS.theme);
   const textSize = readNumber(KEYS.textSize);
   const magnify = readNumber(KEYS.magnify);
@@ -80,7 +80,7 @@ function readPrefs(): Prefs {
   };
 }
 
-function write(key: string, value: string): void {
+export function write(key: string, value: string): void {
   try {
     localStorage.setItem(key, value);
   } catch {
@@ -94,7 +94,7 @@ function write(key: string, value: string): void {
  * Browsers without it fall back to a font-size scale, which still enlarges
  * text and spacing. The UI reports support so the control never lies.
  */
-function detectZoomSupport(): boolean {
+export function detectZoomSupport(): boolean {
   if (typeof CSS === "undefined" || typeof CSS.supports !== "function") return false;
   return CSS.supports("zoom", "1.5");
 }

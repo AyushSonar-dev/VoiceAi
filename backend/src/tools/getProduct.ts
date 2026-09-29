@@ -28,7 +28,13 @@ export async function getProduct(params: GetProductParams): Promise<ToolResult> 
     return fail("product_not_found", "That product could not be found.");
   }
 
-  session = await rememberProducts(store, session, [product.id]);
+  session = await rememberProducts(store, session, [product.id], "getProduct");
+  // Update extended memory - this product is now the focus
+  session = await store.saveSession({
+    ...session,
+    currentProductId: product.id,
+    recentIntent: "getProduct",
+  });
   await recordAction(store, session, { type: "getProduct", productId: product.id });
 
   // The full trusted visual description travels in the result, so the agent can

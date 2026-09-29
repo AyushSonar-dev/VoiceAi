@@ -5,6 +5,8 @@ import { transcribeAudio, synthesizeSpeech, hasTts, InstrumentUnavailableError }
 import { buildState } from "./state.js";
 import { config } from "../config.js";
 import { VOICE_AGENT_TOOL_DEFINITIONS } from "../tools/index.js";
+import { requireAuth } from "../middleware/auth.js";
+import { strictRateLimiter } from "../middleware/rateLimit.js";
 
 export interface VoiceRequest {
   sessionId?: string;
@@ -36,9 +38,12 @@ async function demoTurnSse(req: Request, res: Response): Promise<void> {
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders?.();
 
+  const auth = (req as any).auth;
   const body = (req.body ?? {}) as VoiceRequest;
 
-  if (!body.sessionId) {
+  // Use authenticated sessionId
+  const sessionId = auth?.sessionId || body.sessionId;
+  if (!sessionId) {
     sse(res, { type: "error", payload: { message: "No session was found. Refresh the page and try again." } });
     res.end();
     return;
@@ -95,7 +100,7 @@ async function demoTurnSse(req: Request, res: Response): Promise<void> {
 
   let result;
   try {
-    result = await runTurn({ sessionId: body.sessionId, userText, onToolCall });
+    result = await runTurn({ sessionId, userText, onToolCall });
   } catch (err) {
     console.error("[ECHOLABS] loop failed (demo):", err);
     sse(res, {
@@ -117,7 +122,7 @@ async function demoTurnSse(req: Request, res: Response): Promise<void> {
     }
   }
 
-  const state = await buildState(body.sessionId);
+  const state = await buildState(sessionId);
   sse(res, { type: "final", payload: { reply, audioUrl, state } });
   res.end();
 }
@@ -176,7 +181,7 @@ export function voiceAgentSetupBody(): {
 export function voiceRouter(): Router {
   const router = Router();
 
-  router.post("/voice/setup", async (_req, res) => {
+  router.post("/voice/setup", requireAuth, strictRateLimiter, async (req: Request, res: Response) => {
     if (!config.assemblyaiKey) {
       res.status(503).json({
         error: true,
@@ -205,7 +210,7 @@ export function voiceRouter(): Router {
         return;
       }
       const { token } = (await tokenRes.json()) as { token: string };
-      res.json({ token, session: voiceAgentSetupBody().session });
+      res.json({ token, session: voiceAgentSetupBody().session, wsUrl: config.voiceAgentWsUrl });
     } catch (err) {
       console.error("[ECHOLABS] voice setup failed:", err instanceof Error ? err.message : err);
       res.status(500).json({ error: true, code: "setup_failed", message: "Voice setup failed." });
@@ -218,7 +223,7 @@ export function voiceRouter(): Router {
    * configured: in real mode, this endpoint refuses so nothing accidentally
    * runs down the hand-rolled STT->LLM-loop->TTS path.
    */
-  router.post("/voice", async (req, res) => {
+  router.post("/voice", requireAuth, strictRateLimiter, async (req: Request, res: Response) => {
     if (config.assemblyaiKey) {
       res.status(409).json({
         error: true,

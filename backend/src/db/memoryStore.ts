@@ -73,8 +73,12 @@ export class MemoryStore implements Store {
 
   // ---------------- products ----------------
   async searchProducts(filter: ProductFilter): Promise<Product[]> {
-    const products = applyProductFilters(this.products, filter);
-    return products.map((p) => productShape(p as unknown as ProductDoc));
+    let products = applyProductFilters(this.products, filter);
+    if (filter.cursor) {
+      products = products.filter((p) => p.id > filter.cursor!);
+    }
+    const limit = filter.limit ?? products.length;
+    return products.slice(0, limit).map((p) => productShape(p as unknown as ProductDoc));
   }
 
   async allProducts(): Promise<Product[]> {
@@ -155,7 +159,18 @@ export class MemoryStore implements Store {
   async getOrCreateSession(sessionId: string): Promise<ConversationSession> {
     let session = this.sessions.get(sessionId);
     if (!session) {
-      session = { _id: crypto.randomBytes(12).toString("hex"), sessionId, recentProductIds: [], lastAction: null };
+      session = {
+        _id: crypto.randomBytes(12).toString("hex"),
+        sessionId,
+        recentProductIds: [],
+        lastAction: null,
+        currentProductId: null,
+        recentSearchQuery: null,
+        recentCategory: null,
+        recentIntent: null,
+        recentProductReferences: [],
+        turnCount: 0,
+      };
       this.sessions.set(sessionId, session);
     }
     return sessionShape(session);

@@ -720,26 +720,28 @@ The design decisions that a reviewer should look at first:
 
 Being explicit about what this is not:
 
-- **No authentication or authorization.** Sessions are anonymous UUIDs persisted in `localStorage`.
-  Anyone with a session id can read and mutate that session's cart. `cors()` is fully open.
-- **No rate limiting or request logging.** The `30mb` JSON body limit exists only for the demo
-  audio path; in the live path audio never reaches this server.
-- **No multi-item conversational memory beyond `recentProductIds` + `lastAction`.** The model
-  itself has no memory between sessions; history lives in the AssemblyAI session.
-- **Untested browser paths.** `EchoApp.tsx`, `AgentCore`'s rAF loop, `lib/api.ts`'s SSE splitting,
-  `lib/voiceAgent.ts`'s WebSocket protocol, `lib/voiceAudio.ts`, `prefs.ts` and `session.ts` have
-  no automated tests. The architectural answer is that their logic was pushed into pure functions —
-  but it is not the same as coverage.
-- **`backend/scripts/**` is outside `tsconfig.json`'s `include`**, so `e2e-gemini.ts` and
-  `gemini-compat-stub.mjs` are neither typechecked nor tested.
-- **`VOICE_AGENT_WS_URL` is configured but never read**; the WS host is hardcoded in the client.
-- **`GEMINI_VISION_MODEL` is dead config** (see above).
-- **`MemoryStore` loses everything on restart** — carts, orders and sessions included.
-- **`src/scripts/voiceE2E.ts` and `verifyOrder.ts` have no npm scripts** and need real credentials.
-- **Single store per process.** No cache, no read replicas, no pagination on `searchProducts`
-  (it is capped at 4 results by design).
-- **Frontend `tsx` is not declared** in `frontend/package.json` — it is hoisted from `backend`'s
-  devDependencies. A frontend-only install would not have a test runner.
+- **Authentication uses HTTP-only cookies with server-side session tokens.** The backend issues a secure session token on `/api/session`, stores it in an HTTP-only cookie, and validates ownership on every protected request via `requireAuth` + `requireSessionOwnership` middleware. CORS is restricted to `FRONTEND_ORIGIN`.
+- **Rate limiting and structured request logging are implemented.** `express-rate-limit` protects `/api/*` routes with configurable windows; a request logger outputs structured JSON with request IDs, sanitizing sensitive data (tokens, cookies, API keys).
+- **Conversational memory extended.** `ConversationSession` now tracks `currentProductId`, `recentSearchQuery`, `recentCategory`, `recentIntent`, bounded `recentProductReferences`, and `turnCount` — enabling multi-turn references like "what about the sleeves?" after a product description.
+- **Frontend browser paths have test coverage.** New test suites cover: session management (`session.test.ts`), API client SSE parsing (`api.test.ts`), preferences (`prefs.test.ts`), AgentCore phase resolution (`voice_audio_agent.test.ts`), and transcript handling (`transcript.test.ts`).
+- **`backend/scripts/**` is now included in `tsconfig.json`**, so `e2e-gemini.ts` and `gemini-compat-stub.mjs` are typechecked.
+- **`VOICE_AGENT_WS_URL` is no longer hardcoded.** The WebSocket URL now comes from the backend config via `POST /api/voice/setup` → `wsUrl` field.
+- **`GEMINI_VISION_MODEL` dead config removed** from codebase and `.env.example`.
+- **MongoDB is the persistent source of truth.** When `MONGODB_URI` is set, carts, orders, sessions, products, and coupons persist across restarts. `MemoryStore` remains only as a dev fallback (with loud warnings).
+- **`npm run test:voice-e2e` and `npm run verify:order` scripts added** for the E2E scripts.
+- **Cursor-based pagination added to `searchProducts`** via `cursor`/`pageInfo.hasMore`/`pageInfo.nextCursor` — the LLM can now fetch subsequent pages.
+- **`tsx` explicitly declared in `frontend/package.json`** — frontend tests and typecheck work independently of backend hoisting.
+
+---
+
+### Remaining limitations (by design)
+
+- **Single store per process.** No cache, no read replicas — acceptable for hackathon/local deployment.
+- **`secure: false` on session cookie in dev** — must be set `true` in production with HTTPS.
+- **Single-process demo** — no distributed scaling (Redis, read replicas) because this is a local/hackathon app.
+- **`voiceE2E.ts` and `e2e-gemini.ts` require real credentials** — they are explicit opt-in scripts, not part of CI.
+- **No multi-user sessions** — the app is designed for single-user local use.
+- **No authentication for product search/capabilities** — these remain public for accessibility.
 
 ---
 

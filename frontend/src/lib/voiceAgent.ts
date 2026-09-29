@@ -56,8 +56,6 @@ export interface VoiceAgentEvents {
   onSpeakingChange?: (speaking: boolean) => void;
 }
 
-const WS_URL = "wss://agents.assemblyai.com/v1/ws";
-
 /**
  * One side of the real conversation. The browser holds the WebSocket directly
  * (short-lived AssemblyAI token, no API key client-side); AssemblyAI owns STT,
@@ -94,7 +92,7 @@ export class VoiceAgentSession {
     if (this.connecting) return this.connecting;
 
     this.setStatus("connecting");
-    const url = new URL(WS_URL);
+    const url = new URL(this.setup.wsUrl);
     url.searchParams.set("token", this.setup.token);
     const socket = new WebSocket(url);
 
