@@ -15,6 +15,7 @@ import type { AgentStatus } from "./voiceAgent";
 export type AgentPhase =
   | "disconnected"
   | "connecting"
+  | "deactivating"
   | "idle"
   | "listening"
   | "thinking"
@@ -34,6 +35,13 @@ export interface PhaseInput {
   speaking: boolean;
   /** filler phrase is playing, e.g. "let me check that" */
   filler: boolean;
+  /**
+   * A shutdown has been asked for and the connection is still closing. This is
+   * what makes letting go of Echo a visible, gradual event rather than an
+   * instant jump back to "not connected", so the core can calm down while the
+   * socket is still open.
+   */
+  deactivating: boolean;
   /**
    * The server's voice-activity detection says the user is speaking right now.
    * This is the signal that separates IDLE ("ready, waiting for you") from
@@ -62,8 +70,16 @@ const COPY: Record<AgentPhase, { label: string; detail: string; spoken: string }
   },
   connecting: {
     label: "Connecting",
-    detail: "Opening a private voice connection.",
+    detail: "Waking up — opening a private voice connection.",
     spoken: "Echo is connecting.",
+  },
+  // The core is settling after an active session, not yet gone. Distinguishing
+  // this from `disconnected` is what makes letting go of Echo feel gradual
+  // instead of the picture cutting out.
+  deactivating: {
+    label: "Disconnecting",
+    detail: "Closing the connection.",
+    spoken: "Echo is disconnecting.",
   },
   idle: {
     label: "Ready",
@@ -103,6 +119,9 @@ const COPY: Record<AgentPhase, { label: string; detail: string; spoken: string }
  */
 export function resolvePhase(input: PhaseInput): AgentPhase {
   if (input.agentStatus === "error") return "error";
+  // Checked before `connected`, because the caller clears `connected` as part of
+  // shutting down: testing it later would mean this state could never appear.
+  if (input.deactivating) return "deactivating";
   if (!input.connected) return "disconnected";
   if (input.agentStatus === "connecting") return "connecting";
   if (input.speaking) return "speaking";
@@ -155,7 +174,8 @@ export interface CoreProfile {
  * without colour, and so it reads at a glance from across the room.
  *
  * The radii form a deliberate ladder, smallest to largest:
- *   ended < disconnected < error < thinking < connecting < idle < speaking < listening
+ *   ended < disconnected < error < thinking < deactivating < connecting < idle
+ *   < speaking < listening
  * Two states may never share a radius, because size is the one cue that survives
  * a greyscale render, a still screenshot and a screen reader's silence — the
  * radius is the fallback when nothing else is available.
@@ -186,6 +206,12 @@ export const CORE_PROFILES: Record<AgentPhase, CoreProfile> = {
     radius: 0.78, grain: 0.13, grainScale: 3.0, flow: 0.55, inward: 0.15,
     light: 0.48, energy: 0.68, spin: 0.22, breath: 0.22, breathDepth: 0.022, ring: 0.1,
   },
+  // Calming down on the way out: the ring is already fading, the drift slowing,
+  // and the silhouette is shrinking toward rest but has not arrived there yet.
+  deactivating: {
+    radius: 0.75, grain: 0.07, grainScale: 2.6, flow: 0.12, inward: 0.08,
+    light: 0.44, energy: 0.60, spin: 0.01, breath: 0.07, breathDepth: 0.012, ring: 0.06,
+  },
   // Calm. Low energy, very slow breath, minimal grain drift.
   idle: {
     radius: 0.82, grain: 0.09, grainScale: 2.8, flow: 0.10, inward: 0,
@@ -202,6 +228,46 @@ export const CORE_PROFILES: Record<AgentPhase, CoreProfile> = {
     light: 0.80, energy: 1.0, spin: 0.05, breath: 0.34, breathDepth: 0.05, ring: 0.55,
   },
 };
+
+/**
+ * One step toward a profile, field by field.
+ *
+ * Every field of a profile is a number, so a state change is eased rather than
+ * swapped: the core travels from the old look to the new one over a few frames
+ * instead of snapping. That is what keeps a transition from reading as two
+ * different animations cutting to each other.
+ *
+ * `k` is a fraction, not a duration, so the caller can make it frame-rate
+ * independent — see `easeToward` for that.
+ */
+export function lerpProfile(from: CoreProfile, to: CoreProfile, k: number): CoreProfile {
+  const t = k < 0 ? 0 : k > 1 ? 1 : k;
+  const mix = (a: number, b: number) => a + (b - a) * t;
+  return {
+    radius: mix(from.radius, to.radius),
+    grain: mix(from.grain, to.grain),
+    grainScale: mix(from.grainScale, to.grainScale),
+    flow: mix(from.flow, to.flow),
+    inward: mix(from.inward, to.inward),
+    light: mix(from.light, to.light),
+    energy: mix(from.energy, to.energy),
+    spin: mix(from.spin, to.spin),
+    breath: mix(from.breath, to.breath),
+    breathDepth: mix(from.breathDepth, to.breathDepth),
+    ring: mix(from.ring, to.ring),
+  };
+}
+
+/** How much of the remaining distance one frame's worth of time should close. */
+export function easeToward(current: CoreProfile, target: CoreProfile, dt: number, rate = 6): CoreProfile {
+  return lerpProfile(current, target, 1 - Math.exp(-rate * Math.max(0, dt)));
+}
+
+/** True once the two profiles are close enough that easing further is invisible. */
+export function profilesConverged(a: CoreProfile, b: CoreProfile, epsilon = 0.0015): boolean {
+  const keys = Object.keys(b) as Array<keyof CoreProfile>;
+  return keys.every((key) => Math.abs(a[key] - b[key]) < epsilon);
+}
 
 /**
  * Measured audio, shared by reference rather than by state.

@@ -1,6 +1,6 @@
 import { getStore } from "../db/index.js";
 import { formatPrice } from "../config.js";
-import type { Product, Cart, ConversationSession, Store, ToolResult } from "../types.js";
+import type { Product, ProductAppearance, Cart, ConversationSession, Store, ToolResult } from "../types.js";
 
 /** Structured tool error — serialized into result.error for the LLM. */
 export class ToolError extends Error {
@@ -149,6 +149,54 @@ export async function inStockAlternative(
 export function productIntro(p: Product): string {
   const stock = p.stock > 0 ? "in stock" : "out of stock";
   return `${p.name} — ${formatPrice(p.price)} — rated ${p.rating} stars from ${p.reviewCount} reviews — ${stock}. Key specs: ${p.keySpecs.slice(0, 3).join("; ")}.`;
+}
+
+/**
+ * Render a product's stored appearance as one spoken sentence.
+ *
+ * This is deliberately *not* a creative writing step: it only concatenates
+ * catalog prose that was authored up front, so nothing can be invented here.
+ * It returns `null` when the catalog described nothing, and the caller is
+ * expected to say so plainly rather than substituting a guess.
+ */
+export function appearanceSentence(appearance: ProductAppearance | undefined): string | null {
+  if (!appearance) return null;
+  if (appearance.summary) return appearance.summary;
+
+  // Fall back to composing from the individual fields for a product whose
+  // summary was never authored, still using only what the catalog stated.
+  const parts: string[] = [];
+  if (appearance.primaryColor) parts.push(`it is ${appearance.primaryColor}`);
+  if (appearance.secondaryColors?.length) {
+    parts.push(`with ${listToWords(appearance.secondaryColors)} accents`);
+  }
+  if (appearance.pattern) parts.push(appearance.pattern);
+  if (appearance.details?.length) parts.push(listToWords(appearance.details));
+  if (appearance.texture) parts.push(appearance.texture);
+  if (appearance.styleImpression) parts.push(appearance.styleImpression);
+  if (!parts.length) return null;
+  return `${parts[0]}${parts.length > 1 ? ", " + parts.slice(1).join(", ") : ""}.`;
+}
+
+function listToWords(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? "";
+  return `${items.slice(0, -1).join(", ")} and ${items[items.length - 1]}`;
+}
+
+/**
+ * The compact, safe shape attached to products that are merely *listed* (a
+ * search hit, an out-of-stock alternative). It carries the visual anchor
+ * colours only — enough for the agent to answer "which one is blue?" without
+ * pretending it has the full visual description of a product it never opened.
+ */
+export function appearanceGlance(appearance: ProductAppearance | undefined): Record<string, unknown> | undefined {
+  if (!appearance) return undefined;
+  const glance: Record<string, unknown> = {};
+  if (appearance.primaryColor) glance.primaryColor = appearance.primaryColor;
+  if (appearance.secondaryColors?.length) glance.secondaryColors = appearance.secondaryColors;
+  if (appearance.pattern) glance.pattern = appearance.pattern;
+  if (appearance.styleImpression) glance.styleImpression = appearance.styleImpression;
+  return Object.keys(glance).length ? glance : undefined;
 }
 
 export { getStore };

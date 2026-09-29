@@ -1,0 +1,77 @@
+/**
+ * Gemini-only end-to-end run of the REAL agent loop.
+ *
+ * Nothing is stubbed except the model itself: the real provider selection, the
+ * real tool-calling loop, the real HTTP tool gateway and the real shopping tools
+ * all execute. GEMINI_API_KEY is the only LLM credential present; OPENAI_API_KEY
+ * is explicitly empty. How a product looks is answered from the appearance the
+ * catalog already stores, so no image is ever sent.
+ */
+import { runTurn } from "../src/agent/agent.js";
+
+import { initStore } from "../src/db/index.js";
+
+const ORIGIN = "http://127.0.0.1:4000";
+
+async function newSession() {
+  const res = await fetch(`${ORIGIN}/api/session`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{}",
+  });
+  return (await res.json()).sessionId as string;
+}
+
+const SCRIPT = [
+  ["1. basic conversation", "Hello Echo."],
+  ["2. product search", "Show me men's shirts under 2000 rupees."],
+  ["3. tool calling (add to cart)", "Add the first one to my cart."],
+  ["4. cart", "What's in my cart?"],
+  ["5. product details", "Tell me the rating of the first shirt."],
+  ["6. stored appearance", "How does the first shirt look?"],
+  ["7. appearance follow-up: collar", "What kind of collar does it have?"],
+  ["8. appearance follow-up: colour", "Is the color dark?"],
+  ["9. appearance follow-up: sleeves", "Does it have long sleeves?"],
+  ["10. search by appearance", "Show me something striped."],
+  ["11. honest gap", "Does it come in red?"],
+];
+
+await initStore({ forceMemory: true });
+
+const sid = await newSession();
+console.log(`session=${sid}\n`);
+
+for (const [label, text] of SCRIPT) {
+  const tools: string[] = [];
+  const r = await runTurn({
+    sessionId: sid,
+    userText: text,
+    dispatch: async (name, params) => {
+      const res = await fetch(`${ORIGIN}/api/tools/${name}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(params ?? {}),
+      });
+      return res.json();
+    },
+    onToolCall: ({ name }) => {
+      tools.push(name);
+    },
+  });
+  console.log(`${label}`);
+  console.log(`   ask     : ${text}`);
+  console.log(`   tools   : ${tools.length ? tools.join(" -> ") : "(none)"}`);
+  console.log(`   reply   : ${r.reply}`);
+  console.log("");
+}
+
+// The stored appearance must reach the UI for every product mentioned, and no
+// image field may exist anywhere in the payload.
+const state = await (await fetch(`${ORIGIN}/api/state/${sid}`)).json();
+console.log("appearance carried to the UI:", JSON.stringify(
+  (state.recentProducts ?? []).map((p: any) => ({ name: p.name, appearance: p.appearance?.summary ?? null }))
+));
+console.log("any image field in state:", JSON.stringify(state).match(/imageUrl|visualDescription/i) ? "YES (regression)" : "no");
+
+const caps = await (await fetch(`${ORIGIN}/api/capabilities`)).json();
+console.log("capabilities:", JSON.stringify(caps));

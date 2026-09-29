@@ -1,8 +1,17 @@
 import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
-import { CORE_PROFILES, type AgentPhase, type AudioMeter } from "../src/lib/agentState.js";
+import {
+  CORE_PROFILES,
+  easeToward,
+  lerpProfile,
+  profilesConverged,
+  resolvePhase,
+  type AgentPhase,
+  type AudioMeter,
+} from "../src/lib/agentState.js";
 import { renderCoreFrame, levelForPhase } from "../src/lib/coreRender.js";
+import type { AgentStatus } from "../src/lib/voiceAgent.js";
 
 /**
  * The Agent Core's silhouette.
@@ -17,6 +26,7 @@ import { renderCoreFrame, levelForPhase } from "../src/lib/coreRender.js";
 const PHASES: AgentPhase[] = [
   "disconnected",
   "connecting",
+  "deactivating",
   "idle",
   "listening",
   "thinking",
@@ -155,6 +165,7 @@ describe("core state profiles", () => {
       "disconnected",
       "error",
       "thinking",
+      "deactivating",
       "connecting",
       "idle",
       "speaking",
@@ -277,5 +288,126 @@ describe("which audio the core listens to", () => {
       assert.equal(levelForPhase(mic, phase, true), null, phase);
       assert.equal(levelForPhase(voice, phase, true), null, phase);
     }
+  });
+});
+
+
+describe("eased state changes", () => {
+  test("lerp walks between two states and lands exactly on the target", () => {
+    const from = CORE_PROFILES.listening;
+    const to = CORE_PROFILES.disconnected;
+
+    assert.equal(lerpProfile(from, to, 0).radius, from.radius, "k=0 must not move");
+    assert.equal(lerpProfile(from, to, 1).radius, to.radius, "k=1 must arrive");
+
+    // Halfway is genuinely halfway on every field, not a per-field snap.
+    const half = lerpProfile(from, to, 0.5);
+    for (const key of Object.keys(from) as Array<keyof typeof from>) {
+      assert.ok(
+        Math.abs(half[key] - (from[key] + to[key]) / 2) < 1e-9,
+        `${key} is not halfway`
+      );
+    }
+  });
+
+  test("every field moves monotonically toward the target", () => {
+    const from = CORE_PROFILES.speaking;
+    const to = CORE_PROFILES.idle;
+    let previous = from.radius;
+    for (const k of [0.1, 0.3, 0.5, 0.7, 0.9, 1]) {
+      const step = lerpProfile(from, to, k).radius;
+      assert.ok(step <= previous + 1e-9, "radius must never reverse");
+      previous = step;
+    }
+  });
+
+  test("k is clamped, so a bad frame cannot overshoot the target", () => {
+    const from = CORE_PROFILES.listening;
+    const to = CORE_PROFILES.disconnected;
+    assert.equal(lerpProfile(from, to, -5).radius, from.radius);
+    assert.equal(lerpProfile(from, to, 99).radius, to.radius);
+  });
+
+  test("easeToward closes the gap and never jumps", () => {
+    const from = CORE_PROFILES.listening;
+    const to = CORE_PROFILES.idle;
+    const distance = Math.abs(from.radius - to.radius);
+
+    // One frame of a 60Hz display is a small step, not the whole distance.
+    const oneFrame = easeToward(from, to, 1 / 60);
+    const step = Math.abs(oneFrame.radius - from.radius);
+    assert.ok(step > 0, "must actually move");
+    assert.ok(step < distance, "must not arrive in a single frame");
+
+    // Many frames converge, and each frame is smaller than the one before it.
+    let look = from;
+    let last = Infinity;
+    for (let i = 0; i < 240; i += 1) {
+      look = easeToward(look, to, 1 / 60);
+      const remaining = Math.abs(look.radius - to.radius);
+      assert.ok(remaining <= last + 1e-12, "convergence must not oscillate");
+      last = remaining;
+    }
+    assert.ok(profilesConverged(look, to), "must eventually arrive");
+  });
+
+  test("easeToward is frame rate independent", () => {
+    const from = CORE_PROFILES.connecting;
+    const to = CORE_PROFILES.speaking;
+    // The same wall-clock time in a different number of frames must land in
+    // effectively the same place, or the transition would depend on the display.
+    let sixty = from;
+    for (let i = 0; i < 60; i += 1) sixty = easeToward(sixty, to, 1 / 60);
+    let hundredTwenty = from;
+    for (let i = 0; i < 120; i += 1) hundredTwenty = easeToward(hundredTwenty, to, 1 / 120);
+    assert.ok(
+      Math.abs(sixty.radius - hundredTwenty.radius) < 1e-6,
+      "60Hz and 120Hz disagree"
+    );
+  });
+
+  test("a frozen clock makes no progress at all", () => {
+    const from = CORE_PROFILES.listening;
+    const to = CORE_PROFILES.idle;
+    assert.equal(easeToward(from, to, 0).radius, from.radius);
+  });
+});
+
+describe("disconnect is its own visible state", () => {
+  const base = {
+    connected: true,
+    agentStatus: null as AgentStatus | null,
+    recording: false,
+    busy: false,
+    speaking: false,
+    filler: false,
+    deactivating: false,
+    userSpeaking: false,
+  };
+
+  test("is not confused with a plain disconnect", () => {
+    // `connected` is cleared as part of shutting down, so this state is only
+    // reachable if it is checked first.
+    assert.equal(resolvePhase({ ...base, deactivating: true, connected: false }), "deactivating");
+  });
+
+  test("settles back to disconnected when the shutdown finishes", () => {
+    assert.equal(resolvePhase({ ...base, deactivating: false, connected: false }), "disconnected");
+  });
+
+  test("keeps the profile ladder honest while closing", () => {
+    assert.ok(
+      CORE_PROFILES.deactivating.radius < CORE_PROFILES.connecting.radius,
+      "deactivating should be smaller than connecting"
+    );
+    assert.ok(
+      CORE_PROFILES.deactivating.radius > CORE_PROFILES.error.radius,
+      "deactivating should still be larger than error"
+    );
+  });
+
+  test("carries no audio drive, so nothing surges on the way out", () => {
+    const meter: AudioMeter = { value: 0.8, source: "in" };
+    assert.equal(levelForPhase(meter, "deactivating", false), null);
   });
 });

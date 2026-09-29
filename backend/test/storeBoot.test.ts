@@ -36,7 +36,10 @@ test("an unreachable MONGODB_URI still boots, on the in-memory store", async () 
   // and it must be a working store, not a broken placeholder
   const products = await store.searchProducts({ limit: 3 });
   assert.ok(products.length > 0, "the fallback store must still serve the catalog");
-  for (const p of products) assert.ok(p.imageUrl.startsWith("/images/products/"));
+  for (const p of products) {
+    assert.ok(p.name && p.category, "each product must carry its catalog identity");
+    assert.ok(p.appearance?.summary, "the seeded catalog ships a visual description for every product");
+  }
 
   const session = await store.getOrCreateSession("boot-test-session");
   assert.ok(session.sessionId);

@@ -1,7 +1,14 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { CORE_PROFILES, type AgentPhase, type AudioMeter } from "@/lib/agentState";
+import {
+  CORE_PROFILES,
+  easeToward,
+  profilesConverged,
+  type AgentPhase,
+  type AudioMeter,
+  type CoreProfile,
+} from "@/lib/agentState";
 import { coreBufferSize, coreRingAlpha, levelForPhase, renderCoreFrame } from "@/lib/coreRender";
 
 interface Props {
@@ -18,6 +25,17 @@ interface Props {
   /** rendered CSS pixel diameter */
   size: number;
   className?: string;
+  /**
+   * Whether a voice session is live. The core is the primary control, so it is a
+   * real button whose name states the action it will take, not a decoration with
+   * a separate button hiding somewhere else.
+   */
+  active: boolean;
+  /** an action is in flight; the toggle is inert until it settles */
+  disabled?: boolean;
+  /** accessible name for the action, e.g. "Deactivate Echo voice assistant" */
+  label: string;
+  onToggle: () => void;
 }
 
 /**
@@ -31,7 +49,17 @@ interface Props {
  * shading and the silhouette are in coreRender, so the geometry that matters —
  * a perfect, unclipped circle — can be verified without a browser.
  */
-export function AgentCore({ phase, audio, reducedMotion, size, className }: Props) {
+export function AgentCore({
+  phase,
+  audio,
+  reducedMotion,
+  size,
+  className,
+  active,
+  disabled = false,
+  label,
+  onToggle,
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   // Held in refs so the loop never has to be torn down and rebuilt on every
@@ -70,6 +98,10 @@ export function AgentCore({ phase, audio, reducedMotion, size, className }: Prop
     let running = true;
     let breath = 0;
     let smoothed = 0;
+    // The look actually being painted. It starts on the current state and walks
+    // toward whichever state the core is in, so a change of state is a movement
+    // rather than a cut between two different animations.
+    let look: CoreProfile = CORE_PROFILES[phaseRef.current] ?? CORE_PROFILES.idle;
     let lastFrame = performance.now();
     const started = lastFrame;
 
@@ -89,6 +121,14 @@ export function AgentCore({ phase, audio, reducedMotion, size, className }: Prop
       smoothed += (goal - smoothed) * (goal > smoothed ? 0.5 : 0.12);
       if (smoothed < 0.0015 && goal === 0) smoothed = 0;
 
+      // Ease the surface toward this state's look. Under reduced motion there is
+      // no travel at all: the target is adopted immediately, so the state is
+      // still unmistakable but nothing animates.
+      const target = CORE_PROFILES[currentPhase] ?? CORE_PROFILES.idle;
+      look = reducedRef.current || profilesConverged(look, target)
+        ? target
+        : easeToward(look, target, dt);
+
       const frame = renderCoreFrame({
         cssSize,
         dpr,
@@ -97,16 +137,18 @@ export function AgentCore({ phase, audio, reducedMotion, size, className }: Prop
         level: smoothed,
         energy: 1,
         breath,
+        profile: look,
       });
 
       // Frame rate independence: `breath` is measured in cycles, so the rate
-      // means the same thing on a 60Hz and a 120Hz display.
-      breath = (breath + CORE_PROFILES[currentPhase].breath * dt) % 1;
+      // means the same thing on a 60Hz and a 120Hz display. The rate comes from
+      // the eased profile, so it glides too instead of stepping.
+      breath = (breath + look.breath * dt) % 1;
 
       image.data.set(frame.data);
       ctx.putImageData(image, 0, 0);
 
-      const ring = coreRingAlpha(currentPhase, smoothed);
+      const ring = coreRingAlpha(currentPhase, smoothed, look);
       if (ring > 0) {
         const half = backing / 2;
         const ringR = frame.radius + Math.max(3, half * 0.035) + smoothed * half * 0.012;
@@ -164,20 +206,36 @@ export function AgentCore({ phase, audio, reducedMotion, size, className }: Prop
     if (reducedMotion) repaintRef.current?.();
   }, [reducedMotion, phase, size]);
 
+  const box = cssSizeOf(size);
+
   return (
-    <canvas
-      ref={canvasRef}
-      className={className}
-      style={{
-        // A square CSS box is the outer guarantee, before the first frame.
-        width: `${cssSizeOf(size)}px`,
-        height: `${cssSizeOf(size)}px`,
-      }}
-      /* Purely decorative: the same state is always present as text and in the
-         live region, so the animation is never the only signal. */
-      aria-hidden="true"
-      role="presentation"
-    />
+    /*
+     * The sphere is the control, not a picture of one. The canvas itself stays
+     * decorative and hidden, because the same state is always present as text
+     * and in the live region, so the animation is never the only signal; the
+     * button around it carries the name and the action.
+     */
+    <button
+      type="button"
+      className="core-control"
+      data-active={active || undefined}
+      disabled={disabled}
+      onClick={onToggle}
+      aria-label={label}
+      title={label}
+    >
+      <canvas
+        ref={canvasRef}
+        className={className}
+        style={{
+          // A square CSS box is the outer guarantee, before the first frame.
+          width: `${box}px`,
+          height: `${box}px`,
+        }}
+        aria-hidden="true"
+        role="presentation"
+      />
+    </button>
   );
 }
 

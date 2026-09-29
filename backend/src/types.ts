@@ -9,6 +9,36 @@ export const CATEGORIES = [
 
 export type Category = (typeof CATEGORIES)[number];
 
+/**
+ * How a product LOOKS, described in trusted catalog prose at seed time so a
+ * blind shopper gets the same visual detail a sighted one would take from the
+ * photo. Every field is optional: the shape has to fit electronics, jewelry
+ * and clothing alike, and a product may simply be missing some of it.
+ *
+ * This is deliberately NOT a bag of visual words the LLM must assemble: it is
+ * the catalog's own answer, so nothing here is ever inferred from a name, a
+ * photo, or a previous answer at runtime. Absent means "not specified", and
+ * the agent says exactly that rather than filling the gap.
+ *
+ * Keep it separate from `keySpecs`: specs are the FUNCTIONAL, verifiable facts
+ * (fabric weight, screen size, carat), while this is only how it presents.
+ * "Looks like leather" must never become "made of leather".
+ */
+export interface ProductAppearance {
+  /** "ivory", "gunmetal", "multicolour" — always speakable, never a hex code. */
+  primaryColor?: string;
+  secondaryColors?: string[];
+  pattern?: string; // "small floral", "solid", "pinstripe"
+  /** Shape-defining construction: neckline, sleeves, collar, closure, fit. */
+  details?: string[];
+  /** How the surface reads: "brushed", "glossy", "matte", "chunky knit". */
+  texture?: string;
+  /** 1-3 adjectives the shopper would actually use: "minimal", "edgy". */
+  styleImpression?: string;
+  /** The one line a person would say out loud to describe it on sight. */
+  summary?: string;
+}
+
 export interface Product {
   id: string;
   name: string;
@@ -20,13 +50,12 @@ export interface Product {
   keySpecs: string[]; // max 3
   description: string;
   /**
-   * The product's own photo — the ONLY source of image-derived facts
-   * (colour, pattern, neckline, sleeves, …). Stored as a store-relative path
-   * ("/images/products/<slug>.png"); an absolute http(s) URL also works. Empty
-   * means "no image", and the visual-description tool says so out loud instead
-   * of guessing from the name.
+   * Trusted visual description of the product. Optional on purpose: absence
+   * means the catalog simply doesn't describe how this item looks, and the
+   * agent says "I don't have that detail" rather than inventing one. Nothing
+   * is ever derived from an image at request time.
    */
-  imageUrl: string;
+  appearance?: ProductAppearance;
 }
 
 export interface ProductFilter {

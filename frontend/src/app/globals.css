@@ -222,17 +222,19 @@ select {
 
 /* ------------------------------------------------------------------ stage */
 
-/* The stage is the whole point of the page: one column, centred, generous. */
+/* The stage is the whole point of the page: two columns, the core on the left
+   and the live conversation on the right, at most one screen tall so a long
+   conversation scrolls inside itself instead of pushing everything down. */
 .stage {
   width: 100%;
   max-width: var(--column);
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.95fr);
   align-items: center;
-  text-align: center;
-  padding: clamp(var(--space-4), 5vh, var(--space-7)) clamp(var(--space-4), 4vw, var(--space-7))
-    var(--space-6);
-  gap: var(--space-5);
+  gap: clamp(var(--space-5), 4vw, var(--space-7));
+  text-align: left;
+  padding: clamp(var(--space-4), 4vh, var(--space-6)) clamp(var(--space-4), 4vw, var(--space-7))
+    var(--space-5);
 }
 
 /* The core is measured from this box. It is given the full column width so the
@@ -240,15 +242,89 @@ select {
    so the circle is never squeezed into a non-square box. */
 .stage__core {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: var(--space-4);
   width: 100%;
+  min-width: 0;
+  text-align: center;
+}
+
+/* The conversation column. `min-height: 0` lets the scrolling list inside it
+   actually shrink, and `margin-top: auto` keeps the input sitting on the bottom
+   of the column rather than floating in the middle of it. */
+.stage__side {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.stage__hint {
+  margin: auto 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 .stage__core canvas {
   display: block;
   aspect-ratio: 1;
   max-width: 100%;
+}
+
+/* The core is the control, so the button is unstyled chrome around the canvas:
+   the circle is the only thing that is ever drawn, and the button simply makes it
+   hit-testable, focusable and activatable. */
+.core-control {
+  position: relative;
+  display: block;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  line-height: 0;
+  cursor: pointer;
+  border-radius: 50%;
+  /* The circle is the target, but a finger still wants a comfortable one. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.core-control:disabled {
+  cursor: progress;
+}
+
+.core-control canvas {
+  /* A quiet edge while idle that lifts a little once a session is live, so the
+     control is discoverable without the core being turned into a dashboard
+     tile. */
+  transition: filter 260ms ease, transform 260ms ease;
+}
+
+.core-control[data-active] canvas {
+  filter: saturate(1.06) brightness(1.04);
+  transform: scale(1.015);
+}
+
+/* The focus ring is drawn as a halo around the circle rather than a rectangle,
+   because the shape of the control is the circle itself. */
+.core-control:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 6px;
+}
+
+.core-control:focus-visible::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px var(--bg), 0 0 0 3px var(--focus);
+  pointer-events: none;
 }
 
 .stage__state {
@@ -339,7 +415,6 @@ select {
   align-items: center;
   gap: var(--space-2) var(--space-3);
   width: 100%;
-  max-width: 34rem;
   text-align: left;
 }
 
@@ -476,6 +551,11 @@ select {
   color: var(--muted);
 }
 
+.conversation {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
 .conversation__list {
   list-style: none;
   margin: 0;
@@ -483,10 +563,20 @@ select {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  max-height: 26rem;
+  /* The conversation is bounded and scrolls inside itself, so the stage stays
+     roughly one screen tall however long the exchange gets. */
+  max-height: 58vh;
   overflow-y: auto;
+  overscroll-behavior: contain;
   /* Room for the focus ring of a scrolled turn. */
   padding-inline-end: var(--space-2);
+}
+
+.conversation__empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  max-width: 32ch;
 }
 
 /* A turn is two columns of type: a small speaker label and the sentence. No
@@ -561,36 +651,8 @@ select {
   height: 100%;
 }
 
-.product__shot {
-  position: relative;
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: var(--surface-2);
-  border-radius: var(--radius);
-  overflow: hidden;
-  cursor: pointer;
-  aspect-ratio: 4 / 5;
-}
-
-.product__img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.product__shot:hover .product__img,
-.product__shot:focus-visible .product__img {
-  transform: scale(1.03);
-}
-
 .product__flag {
-  position: absolute;
-  inset-inline-start: var(--space-3);
-  inset-block-end: var(--space-3);
+  margin: var(--space-1) 0 0;
   padding: 0.2rem var(--space-2);
   border-radius: var(--radius-pill);
   background: color-mix(in srgb, var(--bg) 82%, transparent);
@@ -634,6 +696,10 @@ select {
   line-height: 1.45;
 }
 
+.product__desc--none {
+  color: var(--text-soft);
+}
+
 .product__actions {
   display: flex;
   gap: var(--space-2);
@@ -642,9 +708,10 @@ select {
 
 /* The one product being talked about right now. Signalled by an outline, not by
    colour alone, so it survives a greyscale or forced-colours rendering. */
-.product[data-spotlight] .product__shot {
+.product[data-spotlight] {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+  border-radius: var(--radius);
 }
 
 .product[data-spotlight] .product__name {
@@ -1011,10 +1078,28 @@ select {
 
 /* The settings group is styled by AccessibilityControls' own class names, so the
    control surface matches the composer and the cart. */
+/* The settings are an overlay anchored to their own summary, not a panel in the
+   header flow: opening them must never shift the header or nudge the stage. */
 .controls {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+.controls[open] .controls__body {
+  position: absolute;
+  z-index: 20;
+  inset-block-start: calc(100% + var(--space-2));
+  inset-inline-end: 0;
+  width: min(20rem, calc(100vw - 2 * var(--space-4)));
+  max-height: min(70dvh, 32rem);
+  overflow-y: auto;
+  padding: var(--space-4);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 1.25rem 2.5rem rgb(0 0 0 / 0.45);
 }
 
 .controls__summary {
@@ -1051,10 +1136,7 @@ select {
 .controls__body {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border-top: 1px solid var(--line);
-  max-width: 19rem;
+  gap: var(--space-4);
 }
 
 .control {
@@ -1144,7 +1226,6 @@ select {
 }
 
 /* Hover and focus stay obvious under reduced motion; they just do not animate. */
-.product__img,
 .btn,
 .mic,
 .invite__cta,
@@ -1154,12 +1235,24 @@ select {
 
 /* ------------------------------------------------------------------ mobile */
 
-@media (max-width: 40rem) {
+@media (max-width: 52rem) {
+  /* One column: the core first, then the conversation, then the results. */
   .stage {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    text-align: center;
     padding-top: var(--space-5);
-    gap: var(--space-4);
+    gap: var(--space-5);
   }
 
+  .stage__side {
+    /* On a phone the input belongs directly under the core, where the thumb is. */
+    text-align: left;
+    align-self: auto;
+  }
+}
+
+@media (max-width: 40rem) {
   .below {
     gap: var(--space-6);
   }
@@ -1170,7 +1263,7 @@ select {
   }
 
   .conversation__list {
-    max-height: 22rem;
+    max-height: 52vh;
   }
 
   .turn {
@@ -1200,12 +1293,12 @@ select {
   .controls,
   .mic,
   .cartbar__toggle,
-  .product__shot,
+  .product,
   .confirm {
     border: 1px solid CanvasText;
   }
 
-  .product[data-spotlight] .product__shot {
+  .product[data-spotlight] {
     outline: 3px solid Highlight;
   }
 

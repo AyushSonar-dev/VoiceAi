@@ -33,41 +33,48 @@ export function Transcript({ messages, reducedMotion, onClear }: Props) {
     endRef.current?.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "end" });
   }, [messages, still]);
 
-  if (messages.length === 0) return null;
-
+  // The section is always present, even before the first word, so the column
+  // does not jump when the conversation starts and the composer stays where the
+  // eye expects it. An empty conversation says what will happen here.
   return (
     <section className="conversation" aria-labelledby="conversation-heading">
       <div className="conversation__bar">
         <h2 id="conversation-heading" className="conversation__heading">
           Conversation
         </h2>
-        <button type="button" className="linkish" onClick={onClear}>
-          Clear
-        </button>
+        {messages.length > 0 ? (
+          <button type="button" className="linkish" onClick={onClear}>
+            Clear
+          </button>
+        ) : null}
       </div>
 
-      <ol className="conversation__list" role="log" aria-label="Conversation">
-        {messages.map((message) => (
-          <motion.li
-            key={message.id}
-            className="turn"
-            data-speaker={message.speaker}
-            data-partial={message.partial || undefined}
-            initial={still ? false : { opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: still ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
-          >
-            <span className="turn__who" aria-hidden="true">
-              {message.speaker === "user" ? "You" : "Echo"}
-            </span>
-            <p className="turn__text">
-              {message.text}
-              {message.interrupted ? <span className="turn__cut"> — cut short</span> : null}
-            </p>
-          </motion.li>
-        ))}
-        <div ref={endRef} />
-      </ol>
+      {messages.length === 0 ? (
+        <p className="conversation__empty">Ask Echo to find something, and it appears here.</p>
+      ) : (
+        <ol className="conversation__list" role="log" aria-label="Conversation">
+          {messages.map((message) => (
+            <motion.li
+              key={message.id}
+              className="turn"
+              data-speaker={message.speaker}
+              data-partial={message.partial || undefined}
+              initial={still ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: still ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
+            >
+              <span className="turn__who" aria-hidden="true">
+                {message.speaker === "user" ? "You" : "Echo"}
+              </span>
+              <p className="turn__text">
+                {message.text}
+                {message.interrupted ? <span className="turn__cut"> — cut short</span> : null}
+              </p>
+            </motion.li>
+          ))}
+          <div ref={endRef} />
+        </ol>
+      )}
 
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
         {latestFinal

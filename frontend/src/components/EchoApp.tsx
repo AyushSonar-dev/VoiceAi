@@ -58,6 +58,13 @@ export function EchoApp() {
    */
   const [userSpeaking, setUserSpeaking] = useState(false);
   const [micUnsupported, setMicUnsupported] = useState(false);
+  /**
+   * A shutdown has been asked for but the socket is still closing. It buys the
+   * core a short, visible settling period instead of the picture cutting to
+   * "not connected" in a single frame, and it keeps a second click from opening
+   * a second connection while the first is still tearing down.
+   */
+  const [deactivating, setDeactivating] = useState(false);
   const [announcement, setAnnouncement] = useState("");
   const [notice, setNotice] = useState<{ text: string; tone: "info" | "error" } | null>(null);
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
@@ -72,6 +79,10 @@ export function EchoApp() {
   const transcript = useTranscript();
   const demoRecordingHandle = useRef<RecordingHandle | null>(null);
   const voiceSession = useRef<VoiceAgentSession | null>(null);
+  // Interaction lock for the core. A ref, not state: the guard has to be true
+  // within the same tick as the click, before React has rendered anything.
+  const toggleLock = useRef(false);
+  const settleTimer = useRef<number | null>(null);
   // The long-lived voice session closes over this once, so it must read the
   // latest state through a ref rather than a stale render closure.
   const stateRef = useRef<EchoState | null>(null);
@@ -89,6 +100,7 @@ export function EchoApp() {
     busy: effectiveBusy,
     speaking,
     filler: Boolean(fillerText),
+    deactivating,
     userSpeaking,
   });
 
@@ -185,7 +197,13 @@ export function EchoApp() {
     };
   }, []);
 
-  useEffect(() => () => voiceSession.current?.end(), []);
+  useEffect(
+    () => () => {
+      if (settleTimer.current !== null) window.clearTimeout(settleTimer.current);
+      voiceSession.current?.end();
+    },
+    []
+  );
 
   const refreshState = useCallback(async () => {
     if (!sessionId) return;
@@ -432,6 +450,68 @@ export function EchoApp() {
     }
   }, [effectiveBusy, recording, voiceAgent, ensureVoice, runTurn]);
 
+  /**
+   * Letting go of Echo.
+   *
+   * This closes the session that already exists — it never opens a second one.
+   * The microphone is stopped first so nothing is still being captured while the
+   * socket closes, and the `deactivating` state holds the core in view for a
+   * moment so the transition is something you watch rather than a cut.
+   */
+  const handleDisconnect = useCallback(() => {
+    if (!connected || toggleLock.current) return;
+    toggleLock.current = true;
+    setDeactivating(true);
+    setUserSpeaking(false);
+    setSpotlightId(null);
+    setRecording(false);
+    voiceSession.current?.stopMic();
+
+    settleTimer.current = window.setTimeout(() => {
+      voiceSession.current?.end();
+      voiceSession.current = null;
+      setConnected(false);
+      setSpeaking(false);
+      setAgentStatus(null);
+      setDeactivating(false);
+      toggleLock.current = false;
+      settleTimer.current = null;
+    }, 560);
+  }, [connected]);
+
+  /**
+   * The sphere is the primary control: one gesture in, one gesture out.
+   * The lock is the whole reason clicking cannot produce a second connection —
+   * it is checked before anything is awaited, so a fast double click does
+   * nothing the second time.
+   */
+  const handleSphereToggle = useCallback(() => {
+    if (toggleLock.current) return;
+    if (connected) {
+      handleDisconnect();
+      return;
+    }
+    toggleLock.current = true;
+    void handleConnect().finally(() => {
+      toggleLock.current = false;
+    });
+  }, [connected, handleConnect, handleDisconnect]);
+
+  /**
+   * The name of the core's button states the action it will take, so it is never
+   * ambiguous which way a press will go. The state beside the core always says
+   * the same thing in text for anyone who cannot see the button.
+   */
+  const coreLabel = deactivating
+    ? "Disconnecting Echo voice assistant"
+    : connected
+      ? "Deactivate Echo voice assistant"
+      : "Activate Echo voice assistant";
+
+  // Inert while a connection is opening or closing, so the label never promises
+  // an action the button would ignore.
+  const coreLocked = deactivating || agentStatus === "connecting";
+
   const lastActionType =
     echoState?.lastAction && typeof echoState.lastAction === "object"
       ? (echoState.lastAction as { type?: string }).type
@@ -485,107 +565,135 @@ export function EchoApp() {
       </header>
 
       <main id="main" className="app__content">
+        {/*
+          The working stage. On a desktop this is two columns — the core and its
+          state on the left, the live conversation and the input on the right —
+          and it stacks into one column on a phone. The two live inside the same
+          `zoom-region` as before, so magnification still re-lays out the stage
+          rather than scaling it into a blurry overlay.
+        */}
         <div className="stage zoom-region">
-          {/* One continuous object. Everything else on the page is arranged
-              around it, and it does not get replaced when the state changes. */}
           <div className="stage__core" ref={stageRef}>
+            {/* One continuous object. Everything else is arranged around it, and
+                it is never replaced when the state changes. */}
             <AgentCore
               phase={phaseView.phase}
               audio={audio}
               reducedMotion={reducedMotion}
               size={coreSize}
+              active={connected}
+              disabled={coreLocked}
+              label={coreLabel}
+              onToggle={handleSphereToggle}
             />
+
+            <div className="stage__state">
+              <p className="stage__label" data-phase={phaseView.phase}>
+                {phaseView.label}
+              </p>
+              <p className="stage__detail">{phaseView.detail}</p>
+              {/* The full sentence goes to assistive technology; the short word
+                  above is what people can see. One live region, so each state is
+                  heard once. */}
+              <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+                {phaseView.spoken}
+              </span>
+            </div>
+
+            <AnimatePresence>
+              {!connected ? (
+                <ConnectScreen
+                  key="invite"
+                  phase={phaseView.phase}
+                  ready={caps !== null}
+                  voiceAgent={voiceAgent}
+                  micUnsupported={micUnsupported}
+                  reducedMotion={reducedMotion}
+                  onConnect={() => void handleConnect()}
+                />
+              ) : null}
+            </AnimatePresence>
           </div>
 
-          <div className="stage__state">
-            <p className="stage__label" data-phase={phaseView.phase}>
-              {phaseView.label}
-            </p>
-            <p className="stage__detail">{phaseView.detail}</p>
-            {/* The full sentence goes to assistive technology; the short word
-                above is what people can see. One live region, so each state is
-                heard once. */}
-            <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-              {phaseView.spoken}
-            </span>
+          <div className="stage__side">
+            <Transcript
+              messages={transcript.messages}
+              reducedMotion={reducedMotion}
+              onClear={transcript.clear}
+            />
+
+            {/* Failures and guidance are visible, not only announced: the live
+                region is invisible by design, so anything needing action also
+                gets real text. It is not itself a live region, because the
+                announcement above already read it out. */}
+            {notice ? (
+              <p className={`notice${notice.tone === "error" ? " notice--error" : ""}`}>
+                {notice.text}
+              </p>
+            ) : null}
+
+            <AnimatePresence>
+              {connected ? (
+                <motion.div
+                  key="active"
+                  className="stage__active"
+                  initial={still ? { opacity: 0 } : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={still ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                  transition={{ duration: still ? 0.15 : 0.42, ease: [0.22, 1, 0.36, 1] }}
+                >
+                  <Composer
+                    connected={connected}
+                    recording={recording}
+                    busy={effectiveBusy}
+                    reducedMotion={reducedMotion}
+                    onStart={() => void toggleMic()}
+                    onStop={() => void toggleMic()}
+                    onSend={(text) => void runTurn({ text })}
+                  />
+                </motion.div>
+              ) : (
+                <motion.p
+                  key="idle-hint"
+                  className="stage__hint"
+                  initial={still ? false : { opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ duration: still ? 0 : 0.3 }}
+                >
+                  Press the core to begin — it is also a button.
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
-
-          <AnimatePresence>
-            {!connected ? (
-              <ConnectScreen
-                key="invite"
-                phase={phaseView.phase}
-                ready={caps !== null}
-                voiceAgent={voiceAgent}
-                micUnsupported={micUnsupported}
-                reducedMotion={reducedMotion}
-                onConnect={() => void handleConnect()}
-              />
-            ) : null}
-          </AnimatePresence>
-
-          <AnimatePresence>
-            {connected ? (
-              <motion.div
-                key="active"
-                className="stage__active"
-                initial={still ? { opacity: 0 } : { opacity: 0, y: 12 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={still ? { opacity: 0 } : { opacity: 0, y: -8 }}
-                transition={{ duration: still ? 0.15 : 0.42, ease: [0.22, 1, 0.36, 1] }}
-              >
-                <Composer
-                  connected={connected}
-                  recording={recording}
-                  busy={effectiveBusy}
-                  reducedMotion={reducedMotion}
-                  onStart={() => void toggleMic()}
-                  onStop={() => void toggleMic()}
-                  onSend={(text) => void runTurn({ text })}
-                />
-
-                {/* Failures and guidance are visible, not only announced: the
-                    live region is invisible by design, so anything needing action
-                    also gets real text. It is not itself a live region, because
-                    the announcement above already read it out. */}
-                {notice ? (
-                  <p className={`notice${notice.tone === "error" ? " notice--error" : ""}`}>
-                    {notice.text}
-                  </p>
-                ) : null}
-
-                {awaitingCheckoutConfirmation ? (
-                  <div className="confirm" role="group" aria-label="Confirm checkout">
-                    <p className="confirm__text">
-                      Echo previewed your order. Nothing is placed until you confirm.
-                    </p>
-                    <button
-                      type="button"
-                      className="btn btn--solid"
-                      disabled={effectiveBusy}
-                      onClick={() => void runTurn({ text: "yes, place the order" })}
-                    >
-                      Yes, place the order
-                    </button>
-                  </div>
-                ) : null}
-
-                <CheckoutPanel
-                  order={showOrder ? order : null}
-                  currency={currency}
-                  reducedMotion={reducedMotion}
-                  onDismiss={() => setDismissedOrder(order?.id ?? null)}
-                />
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
         </div>
 
+        {/*
+          Everything that is an outcome rather than an interaction: the checkout
+          confirmation, the receipt and the products found so far. Below the stage,
+          in that order, so the conversation is never displaced by results.
+        */}
         <div className="below zoom-region">
-          <Transcript
-            messages={transcript.messages}
+          {awaitingCheckoutConfirmation ? (
+            <div className="confirm" role="group" aria-label="Confirm checkout">
+              <p className="confirm__text">
+                Echo previewed your order. Nothing is placed until you confirm.
+              </p>
+              <button
+                type="button"
+                className="btn btn--solid"
+                disabled={effectiveBusy}
+                onClick={() => void runTurn({ text: "yes, place the order" })}
+              >
+                Yes, place the order
+              </button>
+            </div>
+          ) : null}
+
+          <CheckoutPanel
+            order={showOrder ? order : null}
+            currency={currency}
             reducedMotion={reducedMotion}
-            onClear={transcript.clear}
+            onDismiss={() => setDismissedOrder(order?.id ?? null)}
           />
 
           <ProductList

@@ -1,4 +1,5 @@
 import { config } from "../config.js";
+import { activeProviderName, resolveProviderChain } from "../agent/llm/providers.js";
 import { MemoryStore } from "./memoryStore.js";
 import { MongoStore } from "./mongoStore.js";
 import type { Store } from "../types.js";
@@ -78,7 +79,8 @@ export function storeCapabilities() {
     db: mode,
     stt: Boolean(config.assemblyaiKey),
     tts: Boolean(config.elevenLabsKey),
-    llm: Boolean(config.openaiKey),
-    llmMode: config.openaiKey ? "openai-compatible" : "placeholder",
+    // True for EITHER provider: the app is usable with only GEMINI_API_KEY.
+    llm: resolveProviderChain().length > 0,
+    llmMode: activeProviderName(),
   };
 }

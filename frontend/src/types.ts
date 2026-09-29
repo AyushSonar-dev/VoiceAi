@@ -1,3 +1,18 @@
+/**
+ * How the catalog describes this product's look. Optional on purpose: when it
+ * is absent the catalog simply does not describe the item's appearance, and the
+ * UI says nothing rather than inventing a visual impression.
+ */
+export interface ProductAppearance {
+  primaryColor?: string;
+  secondaryColors?: string[];
+  pattern?: string;
+  details?: string[];
+  texture?: string;
+  styleImpression?: string;
+  summary?: string;
+}
+
 export interface RecentProduct {
   id: string;
   name: string;
@@ -8,10 +23,7 @@ export interface RecentProduct {
   reviewCount: number;
   keySpecs: string[];
   inStock: boolean;
-  imageUrl: string;
-  /** Only present once Echo has actually looked at this product's photo. The UI
-   *  shows it as text; it is never a guess at what the product looks like. */
-  visualDescription?: string;
+  appearance?: ProductAppearance;
 }
 
 export interface CartLine {

@@ -2,20 +2,13 @@
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { OrderInfo } from "@/types";
+import { formatMoney } from "@/lib/money";
 
 interface Props {
   order: OrderInfo | null;
   currency: string;
   onDismiss: () => void;
   reducedMotion: boolean;
-}
-
-function formatMoney(value: number, currency: string) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: currency || "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 /**

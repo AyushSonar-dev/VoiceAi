@@ -1,8 +1,28 @@
 import mongoose from "mongoose";
 import { ALLOWED_CATEGORIES } from "../config.js";
-import type { Category } from "../types.js";
+import type { Category, ProductAppearance } from "../types.js";
 
 const { Schema } = mongoose;
+
+/**
+ * Every field is optional, so the sub-document validates for any category
+ * (a pair of earbuds has no neckline; a dress may have no stated texture) and
+ * a product that simply hasn't been described yet stays valid. Explicitly
+ * avoiding `required` is the point: a missing field must round-trip as
+ * "not specified" so the agent can say so instead of guessing.
+ */
+const appearanceSchema = new Schema<ProductAppearance>(
+  {
+    primaryColor: { type: String, trim: true },
+    secondaryColors: { type: [String] },
+    pattern: { type: String, trim: true },
+    details: { type: [String] },
+    texture: { type: String, trim: true },
+    styleImpression: { type: String, trim: true },
+    summary: { type: String, trim: true },
+  },
+  { _id: false }
+);
 
 export interface ProductDoc {
   _id: mongoose.Types.ObjectId | string;
@@ -14,8 +34,8 @@ export interface ProductDoc {
   reviewCount: number;
   keySpecs: string[];
   description: string;
-  /** Store-relative path (or absolute http(s) URL) of the product photo. */
-  imageUrl: string;
+  /** Trusted visual description. Absent means "not specified", never inferred. */
+  appearance?: ProductAppearance;
 }
 
 const productSchema = new Schema<ProductDoc>(
@@ -34,9 +54,9 @@ const productSchema = new Schema<ProductDoc>(
       },
     },
     description: { type: String, required: true, trim: true },
-    // The product photo. Optional so pre-existing documents stay valid; an
-    // empty value simply means "no image available" (never guessed around).
-    imageUrl: { type: String, default: "", trim: true },
+    // Optional on purpose: catalogs seeded before appearance data existed stay
+    // valid, and the agent answers "I don't have that detail" for those.
+    appearance: { type: appearanceSchema, default: undefined },
   },
   { timestamps: false, versionKey: false }
 );

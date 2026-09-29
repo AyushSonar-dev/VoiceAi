@@ -1,7 +1,6 @@
 import type { Llm, ChatRequest, ChatResponse, ToolCallRequest } from "./types.js";
 import type { ToolResult } from "../../types.js";
 import { ALLOWED_CATEGORIES, config, formatPrice } from "../../config.js";
-import { getLastDescribedProductId } from "../../vision/index.js";
 
 /**
  * PLACEHOLDER BRAIN (clearly marked).
@@ -107,18 +106,28 @@ export class PlaceholderBrain implements Llm {
       };
     }
 
+    // --- what does it LOOK like: fetch the stored description, never recall it ---
+    if (this.isVisualIntent(low)) {
+      const target = this.resolveVisualTarget(text, ctx);
+      if (target) return this.emit("getProduct", target);
+      if (ctx.recentProductIds.length) return this.productReferentQuestion();
+    }
+
+    // --- compare two or more named options ---
+    if (/\b(compare|versus|\bvs\.?\b|difference between|better than)\b/.test(low)) {
+      const ids = this.resolveMultipleReferents(text, ctx.recentProductIds);
+      if (ids.length >= 2) {
+        return this.emitMany(ids.map((productId) => ({ name: "getProduct", args: { sessionId: ctx.sessionId, productId } })));
+      }
+      if (ids.length === 1) return this.emit("getProduct", { sessionId: ctx.sessionId, productId: ids[0] });
+      if (ctx.recentProductIds.length) return this.productReferentQuestion();
+    }
+
     // --- product detail ---
     if (detailIntent) {
       const id = this.resolveReferent(text, ctx.recentProductIds);
       if (id) return this.emit("getProduct", { sessionId: ctx.sessionId, productId: id });
       return this.productReferentQuestion();
-    }
-
-    // --- what does it LOOK like: tool it, never recall it ---
-    if (this.isVisualIntent(low)) {
-      const visual = this.resolveVisualTarget(text, ctx);
-      if (visual) return this.emit("describeProductImage", visual);
-      if (ctx.recentProductIds.length) return this.productReferentQuestion();
     }
 
     // --- search / browse ---
@@ -161,13 +170,17 @@ export class PlaceholderBrain implements Llm {
   }
 
   /**
-   * Which product the user means for a visual question:
-   *  - an explicit "the first one" wins,
-   *  - otherwise the product whose photo was just described ("does it have
-   *    pockets?") — productId is omitted and the tool resolves it, so a
-   *    follow-up never guesses,
-   *  - otherwise the single product already in context,
+   * Which product the user means for an appearance question:
+   *  - an explicit "the first one" / "the second one" wins,
+   *  - otherwise the product the last action was about, when that action named
+   *    a single product ("does it have pockets?") — so a follow-up resolves to
+   *    the same item without the shopper having to say it again,
+   *  - otherwise the most recently mentioned product in context,
    *  - otherwise null, and the caller asks instead of guessing.
+   *
+   * There is no per-session "described" memory to consult: the appearance now
+   * lives on the product itself, so re-fetching the same productId is both
+   * correct and free of any image work.
    */
   private resolveVisualTarget(
     text: string,
@@ -176,14 +189,29 @@ export class PlaceholderBrain implements Llm {
     const explicit = this.resolveReferent(text, ctx.recentProductIds);
     if (explicit) return { sessionId: ctx.sessionId, productId: explicit };
 
-    const lastDescribed = getLastDescribedProductId(ctx.sessionId);
-    if (lastDescribed && ctx.recentProductIds.includes(lastDescribed)) {
-      return { sessionId: ctx.sessionId };
-    }
+    const current = this.lastActionProductId(ctx);
+    if (current) return { sessionId: ctx.sessionId, productId: current };
+
     if (ctx.recentProductIds.length === 1) {
       return { sessionId: ctx.sessionId, productId: ctx.recentProductIds[0] };
     }
+    // A search left several options in context and nothing narrowed it down:
+    // only guess if the shopper named an ordinal, which resolveReferent did.
     return null;
+  }
+
+  /**
+   * The single product the last action was about, when that action named one
+   * and it is still referenceable. This is what makes "it", "this one" and a
+   * bare follow-up resolve to the product currently under discussion without
+   * inventing anything: the id came from a real tool result this session.
+   */
+  private lastActionProductId(ctx: SessionContext): string | null {
+    const lastAction = ctx.lastAction as { type?: string; productId?: string } | null;
+    if (!lastAction || (lastAction.type !== "getProduct" && lastAction.type !== "addToCart")) return null;
+    const productId = lastAction.productId;
+    if (!productId || !ctx.recentProductIds.includes(productId)) return null;
+    return productId;
   }
 
   private buildSearchParams(low: string, sessionId: string): Record<string, unknown> {    const params: Record<string, unknown> = { sessionId, maxResults: 2 };
@@ -196,9 +224,11 @@ export class PlaceholderBrain implements Llm {
     const rating = low.match(/(\d(?:\.\d)?)\s*(?:\+)?\s*star/i);
     if (rating && rating[1]) params.minRating = Number(rating[1]);
 
-    // Purpose/keywords derived from the utterance minus stopwords.
+    // Purpose/keywords derived from the utterance minus stopwords. The filler
+    // words that carry no search meaning ("something", "in", "of") have to go,
+    // or an AND-search over the leftovers finds nothing at all.
     const stopWords =
-      /^(show|find|search|looking|look|for|me|please|i|want|need|get|some|the|a|an|under|below|with|in|my|cart|browse|suggest|recommend|around|about|up|to|rupees|\u20b9|rs\.?|inr)$/i;
+      /^(show|find|search|searching|looking|look|for|me|please|i|want|need|get|some|something|anything|thing|things|item|items|stuff|colour|colou?r|coloured|colou?red|of|any|the|a|an|under|below|within|with|and|or|in|on|at|my|cart|browse|suggest|recommend|around|about|up|to|rupees|\u20b9|rs\.?|inr)$/i;
     const categoryWords = new Set(ALLOWED_CATEGORIES.map((c) => c.toLowerCase()));
     const terms = low
       .split(/\s+/)
@@ -209,7 +239,10 @@ export class PlaceholderBrain implements Llm {
   }
 
   private resolveCartAction(text: string, ctx: SessionContext, tool: "addToCart" | "removeFromCart"): ChatResponse {
-    const id = this.resolveReferent(text, ctx.recentProductIds);
+    // "it" / "this one" after a product was just opened means that product.
+    // The last action naming a single product is the only reliable way to know
+    // which one, and it keeps a bare "add it" from ever being a guess.
+    const id = this.resolveReferent(text, ctx.recentProductIds) ?? this.lastActionProductId(ctx);
     if (!id) {
       if (!ctx.recentProductIds.length) {
         return {
@@ -308,6 +341,13 @@ export class PlaceholderBrain implements Llm {
     const lastTool = messages[messages.length - 1];
     try {
       const result = JSON.parse(lastTool.content) as ToolResult;
+
+      // A comparison turn opened several products in one assistant message, so
+      // the reply is built from every result of that turn rather than the last
+      // one — otherwise the shopper would only ever hear about the final item.
+      const comparison = this.composeComparison(messages);
+      if (comparison) return { message: { role: "assistant", content: comparison } };
+
       // Search results carry an instruction line meant for a real model; the
       // placeholder shouldn't read long ids out loud to a user.
       const core = (result.message ?? "Okay.")
@@ -319,6 +359,54 @@ export class PlaceholderBrain implements Llm {
     } catch {
       return { message: { role: "assistant", content: "Hmm, I hit a snag there. Could you rephrase that?" } };
     }
+  }
+
+  /**
+   * Speak a side-by-side comparison when the previous assistant turn asked for
+   * more than one product. Each line is built only from what the tools returned,
+   * so nothing about either product is invented here.
+   *
+   * The turn's messages are the assistant message carrying the tool calls
+   * followed by one tool result per call, so the assistant message has to be
+   * located by scanning back rather than assumed to be the previous message.
+   */
+  private composeComparison(messages: ChatRequest["messages"]): string | null {
+    let assistantAt = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "assistant" && (messages[i].tool_calls ?? []).length >= 2) {
+        assistantAt = i;
+        break;
+      }
+    }
+    if (assistantAt < 0) return null;
+
+    const calls = messages[assistantAt].tool_calls!;
+    if (!calls.every((c) => c.function.name === "getProduct")) return null;
+
+    const lines: string[] = [];
+    for (const [i, call] of calls.entries()) {
+      const resultMessage = messages
+        .slice(assistantAt + 1)
+        .find((m) => m.role === "tool" && m.tool_call_id === call.id);
+      if (!resultMessage) return null;
+      let result: ToolResult;
+      try {
+        result = JSON.parse(resultMessage.content) as ToolResult;
+      } catch {
+        return null;
+      }
+      const product = result.data?.product as
+        | { name?: string; priceLabel?: string; rating?: number; reviewCount?: number; appearance?: { summary?: string } }
+        | undefined;
+      if (!product?.name) return null;
+      const looks = product.appearance?.summary
+        ? ` It looks ${lowerFirst(product.appearance.summary).replace(/\.$/, "")}.`
+        : " The catalog doesn't describe how it looks.";
+      lines.push(
+        `Option ${i + 1}, ${product.name}, ${product.priceLabel ?? ""}, rated ${product.rating ?? "?"} from ${product.reviewCount ?? "?"} reviews.${looks}`
+      );
+    }
+    return `${lines.join(" ")} Which one would you like to go with?`;
   }
 
   private composeFinal(core: string, result: ToolResult): string {
@@ -347,6 +435,39 @@ export class PlaceholderBrain implements Llm {
         tool_calls: [{ id: `call_${Date.now()}_${Math.round(Math.random() * 1e6)}`, function: { name, arguments: JSON.stringify(args) } }],
       },
     };
+  }
+
+  /** One assistant turn, several tool calls at once (used to compare options). */
+  private emitMany(calls: Array<{ name: string; args: Record<string, unknown> }>): ChatResponse {
+    for (const c of calls) this.history.push({ phase: "emit", note: `${c.name} ${JSON.stringify(c.args)}` });
+    const stamp = Date.now();
+    return {
+      message: {
+        role: "assistant",
+        content: "",
+        tool_calls: calls.map((c, i) => ({
+          id: `call_${stamp}_${i}`,
+          function: { name: c.name, arguments: JSON.stringify(c.args) },
+        })),
+      },
+    };
+  }
+
+  /**
+   * Every distinct option the user named, in the order they named them, so
+   * "compare the first and second options" opens both products. Ordinals are
+   * read in ascending order because a comparison is only meaningful that way.
+   */
+  private resolveMultipleReferents(text: string, ids: string[]): string[] {
+    const order: Record<string, number> = {
+      first: 0, "1st": 0, second: 1, "2nd": 1, third: 2, "3rd": 2, fourth: 3, "4th": 3,
+    };
+    const found = new Set<number>();
+    for (const word of text.toLowerCase().split(/\s+/)) {
+      const idx = order[word.replace(/[^a-z0-9]+/g, "")];
+      if (idx !== undefined && ids[idx]) found.add(idx);
+    }
+    return [...found].sort((a, b) => a - b).map((i) => ids[i]);
   }
 
   private isYes(low: string): boolean {
@@ -394,4 +515,8 @@ interface SessionContext {
 }
 
 // re-export for docs/tests
+function lowerFirst(text: string): string {
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
 export { config, formatPrice };

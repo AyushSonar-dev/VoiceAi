@@ -5,7 +5,8 @@ import {
   buildCartSummary,
 } from "../tools/shared.js";
 import { config } from "../config.js";
-import { getCachedVisual } from "../vision/index.js";
+import { activeProviderName } from "../agent/llm/providers.js";
+import type { ProductAppearance } from "../types.js";
 
 export interface EchoState {
   sessionId: string;
@@ -20,10 +21,9 @@ export interface EchoState {
     reviewCount: number;
     keySpecs: string[];
     inStock: boolean;
-    imageUrl: string;
-    /** Spoken description of the photo, present only after it has been analyzed
-     *  in this session. Absent means "not looked at yet" — never a guess. */
-    visualDescription?: string;
+    /** The catalog's own visual description. Absent means the catalog does not
+     *  describe this item's look — the UI says so rather than inventing one. */
+    appearance?: ProductAppearance;
   }>;
   lastAction: unknown;
   lastOrder: unknown;
@@ -41,15 +41,12 @@ export async function buildState(sessionId: string): Promise<EchoState> {
     .map((id) => byId.get(id))
     .filter((p): p is NonNullable<typeof p> => Boolean(p))
     .map((p) => {
-      // the visual description is derived, per-session and disposable: it comes
-      // from the vision cache only, so the UI can never show a description for
-      // a photo that was not actually analyzed
-      const cached = getCachedVisual(sessionId, p.id);
+      // `appearance` is catalog data, not something derived per session, so it
+      // can be rendered directly and is identical for every shopper.
       return {
         ...p,
         inStock: p.stock > 0,
-        imageUrl: p.imageUrl,
-        ...(cached ? { visualDescription: cached.analysis.description } : {}),
+        ...(p.appearance ? { appearance: p.appearance } : {}),
       };
     });
 
@@ -92,6 +89,9 @@ export function capabilitiesRouter(): Router {
       // in one WebSocket). When the key is absent, demo mode uses text-in only.
       voiceAgent: Boolean(config.assemblyaiKey),
       llmMode: config.assemblyaiKey ? "assemblyai-voice-agent" : cap.llmMode,
+      // Which LLM vendor is actually driving the brain. Reported separately so
+      // it stays visible even when llmMode is describing the voice path.
+      llmProvider: activeProviderName(),
       currency: config.currency,
       categories: Array.from(new Set(["Electronics", "Jewelry", "Men's Clothing", "Women's Clothing"])),
     });

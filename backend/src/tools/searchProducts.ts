@@ -6,10 +6,11 @@ import {
   rememberProducts,
   recordAction,
   productIntro,
+  appearanceGlance,
   getStore,
   ToolError,
 } from "./shared.js";
-import type { ToolResult } from "../types.js";
+import type { Product, ToolResult } from "../types.js";
 
 export interface SearchProductsParams {
   sessionId: string;
@@ -64,11 +65,14 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
   await recordAction(store, session, { type: "searchProducts", productIds: items.map((p) => p.id) });
 
   const listed = items
-    .map((p, i) => `Option ${i + 1}: ${productIntro(p)}`)
+    .map((p, i) => {
+      const glance = appearanceGlance(p.appearance);
+      return `Option ${i + 1}: ${productIntro(p)}${glance ? ` Looks ${appearanceGlanceText(p.appearance!)}.` : ""}`;
+    })
     .join("\n");
 
   return ok(
-    `Found ${items.length} product${items.length === 1 ? "" : "s"}:\n${listed}\n\nUse the exact "Option N" number or the product id above to refer to them.`,
+    `Found ${items.length} product${items.length === 1 ? "" : "s"}:\n${listed}\n\nUse the exact "Option N" number or the product id above to refer to them. Call get_product on an option to get its full visual description before describing how it looks in detail.`,
     {
       items: items.map((p, i) => ({
         index: i + 1,
@@ -81,11 +85,21 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
         stock: p.stock,
         inStock: p.stock > 0,
         keySpecs: p.keySpecs,
-        // so the caller can show the photo and so the visual tool is worth
-        // calling for this option
-        imageUrl: p.imageUrl,
+        // Visual anchor only. The full, trustworthy description of how this
+        // product looks comes from get_product — a search hit is a name on a
+        // list, and this must never be presented as the full answer.
+        appearance: appearanceGlance(p.appearance),
       })),
       searched: { category, maxPrice, minRating },
     }
   );
+}
+
+/** One short visual anchor for a listed product, e.g. "cream, in small florals". */
+function appearanceGlanceText(appearance: NonNullable<Product["appearance"]>): string {
+  const bits: string[] = [];
+  if (appearance.primaryColor) bits.push(appearance.primaryColor);
+  if (appearance.pattern) bits.push(`in ${appearance.pattern}`);
+  else if (appearance.secondaryColors?.length) bits.push(`with ${appearance.secondaryColors.join(" and ")}`);
+  return bits.join(", ");
 }

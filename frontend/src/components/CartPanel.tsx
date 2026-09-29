@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { CartSummary } from "@/types";
+import { formatMoney } from "@/lib/money";
 
 interface Props {
   open: boolean;
@@ -15,14 +16,6 @@ interface Props {
   onApplyCoupon: (code: string) => void;
   onCheckout: () => void;
   reducedMotion: boolean;
-}
-
-function formatMoney(value: number, currency: string) {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: currency || "INR",
-    maximumFractionDigits: 0,
-  }).format(value);
 }
 
 /**

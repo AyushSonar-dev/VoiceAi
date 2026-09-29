@@ -5,6 +5,22 @@ import { CATEGORIES } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/** A concrete, credentialed LLM vendor. */
+export type LlmProviderName = "openai" | "gemini";
+
+/** LLM_PROVIDER as configured: pin one vendor, or let the app choose. */
+export type LlmProviderSetting = "auto" | LlmProviderName;
+
+/**
+ * Coerce LLM_PROVIDER to something usable. Anything unrecognised (including a
+ * typo or an empty string) becomes "auto", because a mistyped provider name
+ * should degrade to a working app, never to a boot crash.
+ */
+export function normalizeProviderSetting(raw: string | undefined): LlmProviderSetting {
+  const value = (raw || "").trim().toLowerCase();
+  return value === "openai" || value === "gemini" ? value : "auto";
+}
+
 // Load repo-root .env first, then a backend-local .env.
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
@@ -34,19 +50,34 @@ export const config = {
   elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
   elevenLabsModel: process.env.ELEVENLABS_MODEL || "eleven_multilingual_v2",
 
+  // ---------------------------------------------------------------------
+  // LLM PROVIDER (conversation brain)
+  // ---------------------------------------------------------------------
+  // Both providers speak the same OpenAI wire protocol, so they share ONE
+  // client, ONE tool-calling loop, and ONE set of tool definitions. Only the
+  // credentials and the model name differ. See agent/llm/providers.ts.
+  //
+  // LLM_PROVIDER: "auto" (default) prefers OpenAI when OPENAI_API_KEY is set
+  // and otherwise uses Gemini. "openai"/"gemini" pin one explicitly (handy for
+  // local development without an OpenAI key). An unknown value is treated as
+  // "auto" so a typo degrades to a working app rather than a boot crash.
+  llmProvider: normalizeProviderSetting(process.env.LLM_PROVIDER),
+
   openaiKey: process.env.OPENAI_API_KEY || "",
   openaiBaseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, ""),
-  llmModel: process.env.LLM_MODEL || "gpt-4o-mini",
+  // OPENAI_MODEL is the documented name; LLM_MODEL is kept as a legacy alias so
+  // existing .env files and deployments keep working untouched.
+  openaiModel: process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini",
+  /** @deprecated legacy alias for {@link config.openaiModel}. */
+  llmModel: process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini",
 
+  geminiKey: process.env.GEMINI_API_KEY || "",
   /**
-   * Visual product understanding. Uses the SAME OpenAI-compatible provider and
-   * key as the conversation brain (which is already vision-capable) — no second
-   * vendor, no second credential. Defaults to a vision-capable model so it
-   * works out of the box; override for gateways that expose another one.
+   * Google's official OpenAI-compatibility endpoint. The `openai` SDK appends
+   * `/chat/completions` to this, which is the documented shape.
    */
-  visionModel: process.env.VISION_MODEL || "gpt-4o-mini",
-  visionTimeoutMs: Number(process.env.VISION_TIMEOUT_MS || 25000),
-  visionImageMaxBytes: Number(process.env.VISION_IMAGE_MAX_BYTES || 6_000_000),
+  geminiBaseUrl: (process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com/v1beta/openai").replace(/\/+$/, ""),
+  geminiModel: process.env.GEMINI_MODEL || "gemini-3.8-flash",
 
   currency: process.env.CURRENCY || "\u20b9", // RUPEE SIGN
 } as const;

@@ -25,7 +25,7 @@ export class MongoStore implements Store {
     try {
       await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
       await this.seedIfEmpty();
-      await this.backfillProductImages();
+      await this.backfillAppearance();
       return this;
     } catch (err) {
       // Never leave a half-open connection behind for the caller to trip over
@@ -56,24 +56,25 @@ export class MongoStore implements Store {
 
   // ---------------- products ----------------
   /**
-   * Catalogs seeded before product images existed still load fine (imageUrl
-   * defaults to ""), so fill the path in on boot instead of asking anyone to
-   * re-seed. Only documents that are missing it are touched.
+   * Catalogs seeded before visual `appearance` existed still load fine (the
+   * field is optional), so fill it in on boot rather than asking anyone to
+   * re-seed. Only documents missing it are touched, and never with a guess:
+   * this copies what the catalog actually states, or leaves the product alone.
    */
-  private async backfillProductImages(): Promise<void> {
-    const noImage = { $or: [{ imageUrl: { $exists: false } }, { imageUrl: "" }] };
-    const stale = await ProductModel.find(noImage, { name: 1, imageUrl: 1 }).lean();
+  private async backfillAppearance(): Promise<void> {
+    const missing = { appearance: { $exists: false } };
+    const stale = await ProductModel.find(missing, { name: 1 }).lean();
     if (!stale.length) return;
     const names = new Set(stale.map((d) => d.name));
-    const ops = SEED_PRODUCTS.filter((p) => names.has(p.name)).map((seed) => ({
+    const ops = SEED_PRODUCTS.filter((p) => names.has(p.name) && p.appearance).map((seed) => ({
       updateOne: {
-        filter: { name: seed.name, ...noImage },
-        update: { $set: { imageUrl: seed.imageUrl } },
+        filter: { name: seed.name, ...missing },
+        update: { $set: { appearance: seed.appearance } },
       },
     }));
     if (!ops.length) return;
     const res = await ProductModel.bulkWrite(ops, { ordered: false });
-    console.log(`[ECHOLABS] Attached product image paths to ${res.modifiedCount} existing product(s).`);
+    console.log(`[ECHOLABS] Added stored visual appearance to ${res.modifiedCount} existing product(s).`);
   }
 
   async searchProducts(filter: ProductFilter): Promise<Product[]> {

@@ -1,4 +1,9 @@
-import { CORE_PROFILES, type AgentPhase, type AudioMeter } from "./agentState";
+import {
+  CORE_PROFILES,
+  type AgentPhase,
+  type AudioMeter,
+  type CoreProfile,
+} from "./agentState";
 
 /**
  * The Agent Core's pixel shading, as a pure function.
@@ -98,6 +103,14 @@ export interface RenderOptions {
   energy: number;
   /** Breath position in cycles, 0..1. */
   breath: number;
+  /**
+   * The look to paint, when the caller is easing between two states. Omit it and
+   * the profile is looked up from `phase`. The core passes an interpolated
+   * profile here so a state change travels rather than snaps, while `phase` is
+   * still passed and still decides the few things that are state rather than
+   * style — see `swell` below.
+   */
+  profile?: CoreProfile;
 }
 
 /**
@@ -112,7 +125,7 @@ export interface RenderOptions {
 export function renderCoreFrame(options: RenderOptions): CoreFrame {
   const { t, energy, breath } = options;
   const phase = options.phase;
-  const p = CORE_PROFILES[phase] ?? CORE_PROFILES.idle;
+  const p = options.profile ?? CORE_PROFILES[phase] ?? CORE_PROFILES.idle;
 
   // An even square shading buffer; the CSS box scales it up to the display
   // size, which is invisible on a surface this grainy.
@@ -247,8 +260,8 @@ export function levelForPhase(
   return null;
 }
 
-export function coreRingAlpha(phase: AgentPhase, drive: number) {
-  const p = CORE_PROFILES[phase] ?? CORE_PROFILES.idle;
+export function coreRingAlpha(phase: AgentPhase, drive: number, profile?: CoreProfile) {
+  const p = profile ?? CORE_PROFILES[phase] ?? CORE_PROFILES.idle;
   if (p.ring <= 0) return 0;
   return Math.min(1, 0.06 + p.ring * 0.16 + drive * 0.12);
 }

@@ -1,15 +1,11 @@
 import type { Product } from "../types.js";
-import { productImageUrl } from "./productImages.js";
 
 // 40 hackathon-sized products across the 4 allowed categories.
 // A few carry stock:0 so the "offer an in-stock alternative" path is real
 // and demonstrable. Do NOT add categories — the backend enforces the enum.
 export type ProductSeed = Omit<Product, "id">;
 
-/** The catalog as authored; `imageUrl` is attached below for every product. */
-type ProductSeedData = Omit<ProductSeed, "imageUrl">;
-
-const PRODUCT_SEED_DATA: ProductSeedData[] = [
+const PRODUCT_SEED_DATA: ProductSeed[] = [
   // ---------------- Electronics ----------------
   {
     name: "Nova Wireless Earbuds",
@@ -20,6 +16,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 1200,
     keySpecs: ["Bluetooth 5.3", "30h battery", "IPX5 splash-proof"],
     description: "Lightweight wireless earbuds with deep bass and a pocketable charging case.",
+    appearance: {
+      primaryColor: "pearl white",
+      details: [
+        "stem-style in-ear buds",
+        "pebble-shaped charging case",
+        "small LED status dot",
+      ],
+      texture: "smooth gloss finish",
+      styleImpression: "minimal, understated",
+      summary: "Pearl white earbuds with slim stems, sitting in a rounded pebble-shaped charging case with a smooth gloss finish.",
+    },
   },
   {
     name: "Pulse Smart Watch Pro",
@@ -30,6 +37,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 843,
     keySpecs: ["1.9 inch AMOLED", "7-day battery", "Built-in GPS"],
     description: "Fitness and notification smart watch with a bright always-on display.",
+    appearance: {
+      primaryColor: "graphite",
+      secondaryColors: ["black"],
+      details: [
+        "rounded square watch face",
+        "domed glass screen",
+        "dark silicone band",
+      ],
+      texture: "brushed metal case with a glossy face",
+      styleImpression: "technical, understated",
+      summary: "A graphite rounded-square watch on a dark silicone band, with a brushed metal case and a slightly domed glass face.",
+    },
   },
   {
     name: "Sona Bluetooth Speaker",
@@ -40,6 +59,16 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 512,
     keySpecs: ["12W output", "10h playtime", "Waterproof"],
     description: "Portable speaker with punchy sound, made for indoor and outdoor use.",
+    appearance: {
+      primaryColor: "charcoal",
+      details: [
+        "cylindrical body",
+        "recessed control strip along the top",
+      ],
+      texture: "matte woven fabric grille",
+      styleImpression: "rugged, simple",
+      summary: "A charcoal cylinder wrapped in a matte woven fabric grille, with a row of recessed controls along the top edge.",
+    },
   },
   {
     name: "Volt 10000mAh Power Bank",
@@ -50,6 +79,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 934,
     keySpecs: ["20W fast charge", "Dual USB-C", "Slim design"],
     description: "A slim power bank that tops up two devices at once.",
+    appearance: {
+      primaryColor: "black",
+      details: [
+        "thin rounded slab",
+        "recessed port panel on one end",
+        "small row of indicator dots",
+      ],
+      texture: "matte soft-touch",
+      styleImpression: "plain, discreet",
+      summary: "A thin matte black rounded slab with a recessed port panel on one end and a small row of indicator dots.",
+    },
   },
   {
     name: "Vision 4K TV Stick",
@@ -60,6 +100,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 388,
     keySpecs: ["4K HDR", "Voice remote", "32GB storage"],
     description: "Plug-in streaming stick that turns any screen into a smart TV.",
+    appearance: {
+      primaryColor: "black",
+      details: [
+        "small dongle form",
+        "HDMI plug on one end",
+        "short HDMI cable",
+      ],
+      texture: "matte plastic",
+      styleImpression: "invisible, minimal",
+      summary: "A small matte black dongle with an HDMI plug on one end and a short HDMI cable tucked alongside it.",
+    },
   },
   {
     name: "Orbit Wireless Keyboard",
@@ -70,6 +121,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 301,
     keySpecs: ["Backlit keys", "Low profile", "2.4GHz wireless"],
     description: "Quiet full-size keyboard with soft-touch keys and a battery that lasts months.",
+    appearance: {
+      primaryColor: "graphite grey",
+      details: [
+        "low-profile slab body",
+        "flat chiclet keys",
+        "thin bezel",
+      ],
+      texture: "soft matte keys",
+      styleImpression: "clean, utilitarian",
+      summary: "A low-profile graphite keyboard with a thin slab body, flat chiclet keys and a narrow bezel around the keys.",
+    },
   },
   {
     name: "EchoMesh Wi-Fi Router",
@@ -80,6 +142,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 210,
     keySpecs: ["AC1200", "5 antennas", "Parental controls"],
     description: "Dual-band router that blankets a small home in reliable Wi-Fi.",
+    appearance: {
+      primaryColor: "black",
+      details: [
+        "upright tower shape",
+        "five slim antennas fanning from the back",
+        "single front status light",
+      ],
+      texture: "matte plastic",
+      styleImpression: "plain, functional",
+      summary: "A matte black router standing as a plain upright tower, with five slim antennas fanning out from the back.",
+    },
   },
   {
     name: "Aurora LED Desk Lamp",
@@ -90,6 +163,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 676,
     keySpecs: ["3 color temperatures", "Touch dimmer", "USB charging port"],
     description: "An eye-friendly reading lamp with glare-free lighting for study or work.",
+    appearance: {
+      primaryColor: "white",
+      secondaryColors: ["silver"],
+      details: [
+        "slim arched arm",
+        "wide flat disc shade",
+        "weighted round base",
+      ],
+      texture: "matte powder-coat",
+      styleImpression: "clean, modern",
+      summary: "A matte white desk lamp with a slim arched arm, a wide flat disc shade and a simple weighted round base.",
+    },
   },
   {
     name: "SoundWave USB Microphone",
@@ -100,6 +185,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 442,
     keySpecs: ["Podcast quality", "Plug and play", "Headphone monitoring"],
     description: "A plug-and-play mic that makes calls, meetings, and recordings crystal clear.",
+    appearance: {
+      primaryColor: "dark grey",
+      details: [
+        "cylindrical body",
+        "round shock mount",
+        "small gain dial",
+      ],
+      texture: "fine metal mesh grille",
+      styleImpression: "studio, professional",
+      summary: "A dark grey cylindrical microphone wrapped in a fine metal mesh grille, sitting in a matching round shock mount.",
+    },
   },
   {
     name: "Nimbus Mini Projector",
@@ -110,6 +206,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 168,
     keySpecs: ["HD 720p", "40-inch image", "Built-in speaker"],
     description: "A compact projector for cozy movie nights at home.",
+    appearance: {
+      primaryColor: "white",
+      details: [
+        "compact boxy body",
+        "recessed glass lens on the front",
+        "textured top panel",
+      ],
+      texture: "soft matte plastic",
+      styleImpression: "compact, homey",
+      summary: "A compact matte white projector with a recessed glass lens on the front and a finely textured top panel.",
+    },
   },
 
   // ---------------- Jewelry ----------------
@@ -122,6 +229,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 521,
     keySpecs: ["925 sterling silver", "45cm chain", "Hypoallergenic"],
     description: "A delicate silver crescent pendant on a fine chain, safe for sensitive skin.",
+    appearance: {
+      primaryColor: "silver",
+      details: [
+        "crescent moon pendant",
+        "very fine plain chain",
+        "small bail at the top of the crescent",
+      ],
+      texture: "high-polish",
+      styleImpression: "delicate, feminine",
+      summary: "A polished silver crescent moon pendant hanging from a very fine, plain chain.",
+    },
   },
   {
     name: "Pearl Drop Earrings",
@@ -132,6 +250,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 345,
     keySpecs: ["Cultured pearls", "Sterling silver posts", "Lightweight"],
     description: "Classic freshwater pearl drops that dress up anything.",
+    appearance: {
+      primaryColor: "ivory white",
+      secondaryColors: ["silver"],
+      details: [
+        "teardrop-shaped pearls",
+        "slim straight posts",
+      ],
+      texture: "smooth high-lustre",
+      styleImpression: "classic, elegant",
+      summary: "Creamy white teardrop pearls on slim silver posts, with a smooth, high-lustre surface.",
+    },
   },
   {
     name: "Gold-Plated Bangle Set",
@@ -142,6 +271,16 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 278,
     keySpecs: ["3 bangles", "18k gold plated", "Tarnish resistant"],
     description: "A stack of three polished gold-plated bangles with a satisfying weight.",
+    appearance: {
+      primaryColor: "gold",
+      details: [
+        "three rounded bangles",
+        "open-ended with a small gap",
+      ],
+      texture: "high-polish",
+      styleImpression: "bold, warm",
+      summary: "Three plain rounded bangles in warm polished gold, each open-ended with a small gap.",
+    },
   },
   {
     name: "Onyx Bead Bracelet",
@@ -152,6 +291,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 411,
     keySpecs: ["Natural onyx", "Stretch fit", "Unisex"],
     description: "A smooth matte-black bead bracelet you can slip on and forget.",
+    appearance: {
+      primaryColor: "black",
+      details: [
+        "strand of round beads of even size",
+        "elastic band",
+        "no clasp",
+      ],
+      texture: "smooth matte",
+      styleImpression: "minimal, unisex",
+      summary: "A strand of smooth, matte black round beads of even size, stretched onto a plain elastic band.",
+    },
   },
   {
     name: "Sapphire Pendant Necklace",
@@ -162,6 +312,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 198,
     keySpecs: ["Lab sapphire", "18k plated chain", "Gift box included"],
     description: "A deep blue sapphire pendant on a long plated chain.",
+    appearance: {
+      primaryColor: "deep blue",
+      secondaryColors: ["gold"],
+      details: [
+        "teardrop-cut stone",
+        "slim gold setting",
+        "long fine chain",
+      ],
+      texture: "faceted and bright",
+      styleImpression: "regal, precious",
+      summary: "A deep blue teardrop-cut stone in a slim gold setting, hung on a long fine gold chain.",
+    },
   },
   {
     name: "Minimal Hoop Earrings",
@@ -172,6 +334,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 690,
     keySpecs: ["Feather light", "Tarnish-free finish", "Everyday wear"],
     description: "Round hoops so light you forget they are on.",
+    appearance: {
+      primaryColor: "silver",
+      details: [
+        "two thin matching hoops",
+        "no charms or stones",
+        "small hinge closure",
+      ],
+      texture: "high-polish",
+      styleImpression: "minimalist, everyday",
+      summary: "Two very thin, unadorned silver hoops of the same size, with a plain polished finish.",
+    },
   },
   {
     name: "Rose Gold Ring Set",
@@ -182,6 +355,16 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 233,
     keySpecs: ["Stackable set", "Adjustable fit", "Rose gold tone"],
     description: "A set of three slim stackable rings in warm rose gold.",
+    appearance: {
+      primaryColor: "rose gold",
+      details: [
+        "three slim plain bands",
+        "narrow enough to stack together",
+      ],
+      texture: "high-polish",
+      styleImpression: "delicate, warm",
+      summary: "Three slim, plain bands in warm rose gold, each narrow enough to stack together.",
+    },
   },
   {
     name: "Turquoise Stud Earrings",
@@ -192,6 +375,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 154,
     keySpecs: ["Turquoise inlay", "Sterling posts", "Small and neat"],
     description: "Crisp turquoise studs set in a simple silver base.",
+    appearance: {
+      primaryColor: "turquoise blue",
+      secondaryColors: ["silver"],
+      details: [
+        "small round cabochon studs",
+        "plain silver base",
+      ],
+      texture: "smooth polished stone",
+      styleImpression: "neat, understated",
+      summary: "Small round turquoise-blue cabochon studs set on a plain silver base.",
+    },
   },
   {
     name: "Twisted Knot Anklet",
@@ -202,6 +396,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 187,
     keySpecs: ["Sterling silver", "Adjustable chain", "42 inch length"],
     description: "A fine twisted-chain anklet with a simple knot detail.",
+    appearance: {
+      primaryColor: "silver",
+      details: [
+        "rope-twist chain",
+        "small knot at the centre",
+        "adjustable slider",
+      ],
+      texture: "twisted, reflective",
+      styleImpression: "delicate, summery",
+      summary: "A fine silver anklet with a rope-twist texture, gathered into a small knot at the centre.",
+    },
   },
   {
     name: "Diamond-Cut Tennis Bracelet",
@@ -212,6 +417,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 302,
     keySpecs: ["Cubic zirconia", "Lobster clasp", "18k plated"],
     description: "A shimmering tennis bracelet that catches the light from every angle.",
+    appearance: {
+      primaryColor: "silver",
+      secondaryColors: ["clear"],
+      details: [
+        "continuous line of round faceted stones",
+        "link-set band",
+        "lobster clasp",
+      ],
+      texture: "bright, highly reflective",
+      styleImpression: "glamorous, formal",
+      summary: "A continuous line of round, faceted clear stones set in a silver-toned link bracelet that catches the light from every angle.",
+    },
   },
 
   // ---------------- Men's Clothing ----------------
@@ -224,6 +441,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 892,
     keySpecs: ["Soft cotton", "Wrinkle-free", "Regular fit"],
     description: "A wardrobe-staple oxford in a breathable, easy-care weave.",
+    appearance: {
+      primaryColor: "white",
+      details: [
+        "soft buttoned collar",
+        "button front",
+        "long sleeves",
+        "regular straight body",
+      ],
+      texture: "smooth matte weave",
+      styleImpression: "classic, crisp",
+      summary: "A crisp white button-down shirt with a soft buttoned collar, long sleeves and a regular straight-cut body.",
+    },
   },
   {
     name: "Slim Denim Jeans",
@@ -234,6 +463,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 1210,
     keySpecs: ["Stretch denim", "5-pocket style", "Slim leg"],
     description: "Everyday jeans with just enough stretch to stay comfortable all day.",
+    appearance: {
+      primaryColor: "dark blue indigo",
+      details: [
+        "five-pocket front",
+        "slim close-cut leg",
+        "faded whiskering at the thigh",
+      ],
+      texture: "soft washed denim",
+      styleImpression: "casual, everyday",
+      summary: "Dark blue indigo slim jeans with a faded, lightly whiskered front and a close-cut leg.",
+    },
   },
   {
     name: "Merino Crew Sweater",
@@ -244,6 +484,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 655,
     keySpecs: ["100% merino wool", "Warm but light", "Machine washable"],
     description: "A fine-gauge merino sweater that layers easily under a coat.",
+    appearance: {
+      primaryColor: "charcoal grey",
+      details: [
+        "plain round crew neck",
+        "close-fitting long sleeves",
+        "fine rib at the cuffs and hem",
+      ],
+      texture: "fine smooth knit",
+      styleImpression: "smart, minimal",
+      summary: "A charcoal grey fine-gauge knit with a plain round crew neck and close-fitting long sleeves.",
+    },
   },
   {
     name: "Everyday Chino Pants",
@@ -254,6 +505,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 540,
     keySpecs: ["Tapered cut", "4 colors", "Machine washable"],
     description: "Sharp chinos that go from office to evening without a fuss.",
+    appearance: {
+      primaryColor: "tan",
+      details: [
+        "flat front",
+        "tapered leg",
+        "slanted side pockets",
+        "clean unwashed finish",
+      ],
+      texture: "smooth matte twill",
+      styleImpression: "smart-casual",
+      summary: "Warm tan chinos with a flat front, a tapered leg and a clean, unwashed finish.",
+    },
   },
   {
     name: "Lightweight Bomber Jacket",
@@ -264,6 +527,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 372,
     keySpecs: ["Water resistant", "Breathable shell", "2 zip pockets"],
     description: "A packable bomber that shrugs off light rain and wind.",
+    appearance: {
+      primaryColor: "deep olive",
+      details: [
+        "full-length zip front",
+        "ribbed cuffs and hem",
+        "lightly padded body",
+        "shirt collar",
+      ],
+      texture: "smooth matte shell",
+      styleImpression: "casual, sporty",
+      summary: "A deep olive bomber with a full zip front, ribbed cuffs and hem, and a lightly padded body.",
+    },
   },
   {
     name: "Cotton Crew T-Shirt 3-Pack",
@@ -274,6 +549,19 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 1430,
     keySpecs: ["100% combed cotton", "Set of 3", "Pre-shrunk"],
     description: "Three soft, sturdy crew tees that hold their shape wash after wash.",
+    appearance: {
+      primaryColor: "white",
+      secondaryColors: ["heather grey", "black"],
+      details: [
+        "plain round crew neck",
+        "regular straight body",
+        "short sleeves",
+        "set of three colours",
+      ],
+      texture: "smooth soft jersey",
+      styleImpression: "basic, everyday",
+      summary: "Plain crew-neck tees in white, heather grey and black, each with a regular straight body and short sleeves.",
+    },
   },
   {
     name: "Tailored Navy Blazer",
@@ -284,6 +572,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 210,
     keySpecs: ["Structured fit", "Horn buttons", "2-button closure"],
     description: "A sharp navy blazer that finishes a formal look.",
+    appearance: {
+      primaryColor: "deep navy blue",
+      details: [
+        "notched lapels",
+        "two-button front",
+        "lightly structured shoulder",
+        "flap pockets",
+      ],
+      texture: "smooth matte suiting cloth",
+      styleImpression: "sharp, formal",
+      summary: "A deep navy blue single-breasted blazer with notched lapels, a two-button front and a lightly structured shoulder.",
+    },
   },
   {
     name: "Fleece Hoodie",
@@ -294,6 +594,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 988,
     keySpecs: ["Brushed fleece", "Kangaroo pocket", "Drawstring hood"],
     description: "A heavyweight hoodie for cold mornings and lazy weekends.",
+    appearance: {
+      primaryColor: "mid grey",
+      details: [
+        "drawstring hood",
+        "kangaroo pocket",
+        "ribbed cuffs",
+      ],
+      texture: "brushed soft fleece",
+      styleImpression: "casual, cosy",
+      summary: "A mid grey heavyweight hoodie with a drawstring hood, a kangaroo pocket and ribbed cuffs.",
+    },
   },
   {
     name: "Linen Summer Shirt",
@@ -304,6 +615,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 456,
     keySpecs: ["Pure linen", "Breathable", "Long sleeve"],
     description: "A light, airy linen shirt made for warm weather.",
+    appearance: {
+      primaryColor: "cream",
+      details: [
+        "soft open collar",
+        "long sleeves",
+        "relaxed untucked body",
+        "straight hem",
+      ],
+      texture: "lightly crinkled woven linen",
+      styleImpression: "relaxed, airy",
+      summary: "A light cream linen shirt with a soft open collar, long sleeves and a relaxed, untucked body.",
+    },
   },
   {
     name: "Jogger Sweatpants",
@@ -314,6 +637,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 610,
     keySpecs: ["Elastic waist", "Tapered leg", "Side pockets"],
     description: "Soft tapered joggers with a secure drawstring waist.",
+    appearance: {
+      primaryColor: "dark grey",
+      details: [
+        "elastic drawstring waist",
+        "tapered leg",
+        "side pockets",
+        "ribbed ankle cuffs",
+      ],
+      texture: "brushed loopback fleece",
+      styleImpression: "casual, sporty",
+      summary: "Dark grey tapered sweatpants with an elastic drawstring waist, side pockets and ribbed ankle cuffs.",
+    },
   },
 
   // ---------------- Women's Clothing ----------------
@@ -326,6 +661,21 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 830,
     keySpecs: ["Flattering wrap", "Side pockets", "Knee length"],
     description: "A flowy wrap dress with a tie waist and handy pockets.",
+    appearance: {
+      primaryColor: "cream",
+      secondaryColors: ["navy", "sage"],
+      pattern: "small scattered floral sprigs",
+      details: [
+        "flutter short sleeves",
+        "V-neck wrap bodice",
+        "self-fabric tie waist",
+        "knee-length skirt",
+        "side seam pockets",
+      ],
+      texture: "light, softly draping woven fabric",
+      styleImpression: "feminine, warm-weather",
+      summary: "A cream wrap dress scattered with small navy and sage floral sprigs, with flutter short sleeves, a V-neck wrap bodice, a self-tie waist and a knee-length skirt.",
+    },
   },
   {
     name: "High-Rise Leggings",
@@ -336,6 +686,17 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 1560,
     keySpecs: ["Squat-proof", "4-way stretch", "High waist"],
     description: "Seamless-feel leggings that stay put through any workout.",
+    appearance: {
+      primaryColor: "black",
+      details: [
+        "wide high-rise waistband",
+        "ankle-length legs",
+        "no visible seams",
+      ],
+      texture: "smooth matte stretch knit",
+      styleImpression: "minimal, sleek",
+      summary: "Matte black ankle-length leggings with a wide high-rise waistband and no visible seams.",
+    },
   },
   {
     name: "Silk Blouse",
@@ -346,6 +707,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 410,
     keySpecs: ["100% mulberry silk", "Pearl buttons", "Dry clean"],
     description: "A luxuriously smooth silk blouse with delicate pearl buttons.",
+    appearance: {
+      primaryColor: "ivory",
+      details: [
+        "softly rounded neckline",
+        "small pearl buttons down the front",
+        "relaxed drape",
+        "long sleeves",
+      ],
+      texture: "fluid, softly lustrous",
+      styleImpression: "elegant, understated",
+      summary: "A soft ivory silk blouse with a relaxed drape, a softly rounded neckline and small pearl buttons down the front.",
+    },
   },
   {
     name: "A-Line Floral Skirt",
@@ -356,6 +729,20 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 355,
     keySpecs: ["Midi length", "Hidden zip", "Lined"],
     description: "A twirlable midi skirt in a soft floral print.",
+    appearance: {
+      primaryColor: "cream",
+      secondaryColors: ["coral", "sage"],
+      pattern: "small scattered floral",
+      details: [
+        "A-line silhouette",
+        "neat fitted waistband",
+        "mid-calf length",
+        "fully lined",
+      ],
+      texture: "light, softly draping woven fabric",
+      styleImpression: "feminine, summery",
+      summary: "A small-floral A-line skirt in cream with coral and sage sprigs, sitting mid-calf with a neat fitted waistband.",
+    },
   },
   {
     name: "Wool Tailored Coat",
@@ -366,6 +753,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 264,
     keySpecs: ["Structured wool", "Double breasted", "Long length"],
     description: "A statement wool coat built to last through many winters.",
+    appearance: {
+      primaryColor: "camel",
+      details: [
+        "wide notched lapels",
+        "double-breasted front",
+        "below-knee hem",
+        "wide sleeves",
+      ],
+      texture: "dense, brushed wool",
+      styleImpression: "statement, tailored",
+      summary: "A camel wool coat with wide notched lapels, a double-breasted front and a long hem that falls below the knee.",
+    },
   },
   {
     name: "Ribbed Knit Top",
@@ -376,6 +775,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 720,
     keySpecs: ["Soft ribbed knit", "Flattering cut", "Long sleeve"],
     description: "A form-flattering knit top that works under cardigans or alone.",
+    appearance: {
+      primaryColor: "cream",
+      details: [
+        "body-skimming shape",
+        "long sleeves",
+        "simple round neck",
+        "ribbed throughout",
+      ],
+      texture: "soft vertical rib knit",
+      styleImpression: "fitted, minimal",
+      summary: "A cream ribbed knit top with a close, body-skimming shape, long sleeves and a simple round neck.",
+    },
   },
   {
     name: "Wide-Leg Trousers",
@@ -386,6 +797,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 389,
     keySpecs: ["High waist", "Crease line", "Tailored drape"],
     description: "Flowing wide-leg trousers with a clean crease down the front.",
+    appearance: {
+      primaryColor: "charcoal",
+      details: [
+        "high waist",
+        "wide fluid leg",
+        "sharp pressed crease down the front",
+        "front pleats",
+      ],
+      texture: "smooth matte suiting cloth",
+      styleImpression: "tailored, elegant",
+      summary: "Charcoal high-waisted trousers with a wide, fluid leg and a sharp pressed crease down the front.",
+    },
   },
   {
     name: "Denim Jacket",
@@ -396,6 +819,18 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 512,
     keySpecs: ["Classic fit", "Stone-washed", "Metal buttons"],
     description: "The classic denim jacket in a worn-in stone-wash.",
+    appearance: {
+      primaryColor: "light blue",
+      details: [
+        "pointed collar",
+        "button front",
+        "cropped boxy body",
+        "two flap chest pockets",
+      ],
+      texture: "soft stone-washed denim",
+      styleImpression: "casual, vintage",
+      summary: "A light stone-washed blue denim trucker jacket with a pointed collar, a button front and a cropped, boxy body.",
+    },
   },
   {
     name: "Maxi Sundress",
@@ -406,6 +841,19 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 605,
     keySpecs: ["Breathable cotton", "Adjustable straps", "Floor length"],
     description: "A breezy floor-length sundress for warm afternoons.",
+    appearance: {
+      primaryColor: "sand",
+      pattern: "fine vertical stripes",
+      details: [
+        "slim adjustable straps",
+        "deep neckline",
+        "flowing floor-length skirt",
+        "side seam pockets",
+      ],
+      texture: "light, softly draping woven fabric",
+      styleImpression: "relaxed, summery",
+      summary: "A sand-coloured maxi sundress with fine vertical stripes, slim adjustable straps and a deep neckline.",
+    },
   },
   {
     name: "Cashmere Cardigan",
@@ -416,17 +864,27 @@ const PRODUCT_SEED_DATA: ProductSeedData[] = [
     reviewCount: 220,
     keySpecs: ["Pure cashmere", "Button front", "Ribbed hem"],
     description: "An unbelievably soft button-up cardigan in pure cashmere.",
+    appearance: {
+      primaryColor: "oatmeal",
+      details: [
+        "button front",
+        "ribbed cuffs and hem",
+        "soft shawl collar",
+        "relaxed body",
+      ],
+      texture: "plush, brushed cashmere",
+      styleImpression: "cosy, understated",
+      summary: "A soft oatmeal cashmere cardigan with a simple button front, a soft shawl collar and ribbed cuffs and hem.",
+    },
   },
 ];
 
-// Every catalog product has its own photo, so the visual-description tool
-// always has REAL image bytes to analyze and never has to guess from the name.
-// The assets are generated once by `npm run images --workspace=backend`
-// (src/scripts/generateProductImages.ts) and committed under public/images.
-export const SEED_PRODUCTS: ProductSeed[] = PRODUCT_SEED_DATA.map((p) => ({
-  ...p,
-  imageUrl: productImageUrl(p.name),
-}));
+/**
+ * The catalog is authored with each product's visual `appearance` already
+ * written out, so a blind shopper gets the same detail a sighted one would
+ * read off a photo without anything being analysed at request time.
+ */
+export const SEED_PRODUCTS: ProductSeed[] = PRODUCT_SEED_DATA;
 
 // Out-of-stock products remain visible in search results (LLM sees inStock:
 // false) and addToCart() refuses them while offering a real in-stock

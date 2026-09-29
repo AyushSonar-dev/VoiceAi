@@ -5,7 +5,6 @@ import { removeFromCart, type RemoveFromCartParams } from "./removeFromCart.js";
 import { getCart, type GetCartParams } from "./getCart.js";
 import { applyCoupon, type ApplyCouponParams } from "./applyCoupon.js";
 import { checkout, type CheckoutParams } from "./checkout.js";
-import { describeProductImage, type DescribeProductImageParams } from "./describeProductImage.js";
 import { ToolError } from "./shared.js";
 import type { ToolResult } from "../types.js";
 
@@ -28,7 +27,6 @@ export const TOOL_REGISTRY: Record<string, ToolHandler> = {
   getCart: getCart,
   applyCoupon: applyCoupon,
   checkout: checkout,
-  describeProductImage: describeProductImage,
 };
 
 export const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -62,7 +60,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
     function: {
       name: "getProduct",
       description:
-        "Fetch full details for a product the user is already discussing. productId must be one the user was handed in the current session (e.g. from searchProducts or getCart).",
+        "Fetch full details for a product the user is already discussing, including the catalog's own visual description of it (colour, pattern, cut, neckline, sleeves, texture). productId must be one the user was handed in the current session (e.g. from searchProducts or getCart). This is the tool to call for ANY question about how something looks — its appearance comes back in `product.appearance`. A search result only carries a colour/pattern hint, so never describe a product's look in detail from search output: call this first. If `product.appearance` is absent, the catalog has no visual description for that item, so say plainly that you don't have that detail instead of guessing.",
       parameters: {
         type: "object",
         properties: {
@@ -151,25 +149,6 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
       },
     },
   },
-  {
-    type: "function",
-    function: {
-      name: "describeProductImage",
-      description:
-        "Look at a product's actual photo and describe ONLY what is visible in it (colour, pattern, cut, neckline, sleeves, length, screen, ports, stones…). Call this when the user asks what it looks like, its colour, whether it has pockets/short sleeves/a screen, or anything else that needs seeing rather than reading. productId must be one the user was handed this session. Never answer a visual question from the name, description or specs, and never guess: if the photo cannot be read the tool says so. Results are cached per session, so follow-ups ('does it have pockets?') cost nothing extra.",
-      parameters: {
-        type: "object",
-        properties: {
-          sessionId: { type: "string", description: "The current conversation sessionId." },
-          productId: {
-            type: "string",
-            description: "A productId returned by a tool earlier in this session. Omit only when the user is plainly asking about the single product just described visually.",
-          },
-        },
-        required: ["sessionId"],
-      },
-    },
-  },
 ];
 
 /**
@@ -215,7 +194,6 @@ export const VOICE_AGENT_TOOL_NAME_MAP: Record<string, string> = {
   get_cart: "getCart",
   apply_coupon: "applyCoupon",
   checkout: "checkout",
-  describe_product_image: "describeProductImage",
 };
 
 type VoiceAgentToolDefinition = {
@@ -259,7 +237,7 @@ export const VOICE_AGENT_TOOL_DEFINITIONS: VoiceAgentToolDefinition[] = [
   ),
   voaTool(
     "get_product",
-    "Fetch full details for one product the user is already discussing. Use only productId values a previous tool result returned this session — never invent one. Call this when the user asks about a specific item that was already shown.",
+    "Fetch full details for one product the user is already discussing, including the catalog's own visual description of it (colour, pattern, cut, neckline, sleeves, texture, style). Use only productId values a previous tool result returned this session — never invent one. Call this when the user asks about a specific item that was already shown, and ALWAYS call this before describing how a product looks: a search result only carries a colour/pattern hint, never the full appearance. Follow-ups like 'and the sleeves?' are answered from the same result at no extra cost. If the result has no appearance data, the catalog doesn't describe that item's look — say so plainly and never guess from the name or specs.",
     {
       productId: { type: "string", description: "A productId from a search_products or get_cart result earlier in this session." },
     },
@@ -305,14 +283,6 @@ export const VOICE_AGENT_TOOL_DEFINITIONS: VoiceAgentToolDefinition[] = [
     },
     []
   ),
-  voaTool(
-    "describe_product_image",
-    "Look at a product's real photo and report only what is visible (colour, pattern, cut, neckline, sleeves, length, screen, ports, stones). Call this whenever the user asks what something looks like, what colour it is, or whether it has a visible feature such as pockets, short sleeves or a screen. productId must come from a previous tool result this session. NEVER answer a visual question from the product name or specs, and never guess — if the photo cannot be read, the tool says so. Follow-ups ('does it have pockets?') are answered from the same photo at no extra cost.",
-    {
-      productId: { type: "string", description: "A productId returned by a tool earlier in this session. Omit only when the user is plainly asking about the single product just described." },
-    },
-    []
-  ),
 ];
 
 export {
@@ -323,7 +293,6 @@ export {
   getCart,
   applyCoupon,
   checkout,
-  describeProductImage,
 };
 export type {
   SearchProductsParams,
@@ -333,5 +302,4 @@ export type {
   GetCartParams,
   ApplyCouponParams,
   CheckoutParams,
-  DescribeProductImageParams,
 };
