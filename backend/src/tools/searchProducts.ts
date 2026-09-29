@@ -20,6 +20,8 @@ export interface SearchProductsParams {
   q?: string;
   purpose?: string;
   maxResults?: number;
+  /** Cursor for pagination - the productId to start after */
+  cursor?: string;
 }
 
 /**
@@ -27,6 +29,7 @@ export interface SearchProductsParams {
  * to maxPrice/category/q. Returns 1-2 options by default. Every returned id is
  * remembered on the session so the model can only ever reference real ids it
  * was handed.
+ * Supports cursor-based pagination via the `cursor` parameter.
  */
 export async function searchProducts(params: SearchProductsParams): Promise<ToolResult> {
   const store = getStore();
@@ -51,7 +54,9 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
   const keywords = [params.q, params.purpose].filter((x): x is string => Boolean(x && x.trim()));
   const q = keywords.join(" ").trim() || undefined;
 
-  const items = await store.searchProducts({ category, maxPrice, minRating, q, limit: maxResults });
+  // Use cursor-based pagination: fetch maxResults + 1 to determine hasMore
+  const fetchLimit = maxResults + 1;
+  const items = await store.searchProducts({ category, maxPrice, minRating, q, limit: fetchLimit, cursor: params.cursor });
 
   if (!items.length) {
     return fail(
@@ -61,10 +66,22 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
     );
   }
 
-  session = await rememberProducts(store, session, items.map((p) => p.id));
-  await recordAction(store, session, { type: "searchProducts", productIds: items.map((p) => p.id) });
+  // Check if there are more results
+  const hasMore = items.length > maxResults;
+  const pageItems = hasMore ? items.slice(0, maxResults) : items;
+  const nextCursor = hasMore ? items[maxResults - 1].id : undefined;
 
-  const listed = items
+  session = await rememberProducts(store, session, pageItems.map((p) => p.id), "searchProducts");
+  // Update extended memory with search context
+  session = await store.saveSession({
+    ...session,
+    recentSearchQuery: params.q || params.purpose || null,
+    recentCategory: category || null,
+    recentIntent: "search",
+  });
+  await recordAction(store, session, { type: "searchProducts", productIds: pageItems.map((p) => p.id) });
+
+  const listed = pageItems
     .map((p, i) => {
       const glance = appearanceGlance(p.appearance);
       return `Option ${i + 1}: ${productIntro(p)}${glance ? ` Looks ${appearanceGlanceText(p.appearance!)}.` : ""}`;
@@ -72,9 +89,9 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
     .join("\n");
 
   return ok(
-    `Found ${items.length} product${items.length === 1 ? "" : "s"}:\n${listed}\n\nUse the exact "Option N" number or the product id above to refer to them. Call get_product on an option to get its full visual description before describing how it looks in detail.`,
+    `Found ${pageItems.length} product${pageItems.length === 1 ? "" : "s"}:${hasMore ? " (more available)" : ""}\n${listed}\n\nUse the exact "Option N" number or the product id above to refer to them. Call get_product on an option to get its full visual description before describing how it looks in detail.`,
     {
-      items: items.map((p, i) => ({
+      items: pageItems.map((p, i) => ({
         index: i + 1,
         id: p.id,
         name: p.name,
@@ -91,6 +108,10 @@ export async function searchProducts(params: SearchProductsParams): Promise<Tool
         appearance: appearanceGlance(p.appearance),
       })),
       searched: { category, maxPrice, minRating },
+      pageInfo: {
+        hasMore,
+        nextCursor,
+      },
     }
   );
 }

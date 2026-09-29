@@ -8,18 +8,24 @@
  * catalog already stores, so no image is ever sent.
  */
 import { runTurn } from "../src/agent/agent.js";
-
 import { initStore } from "../src/db/index.js";
+import type { DispatchFn } from "../src/agent/agent.js";
+import type { ToolResult } from "../src/types.js";
 
 const ORIGIN = "http://127.0.0.1:4000";
 
-async function newSession() {
+interface SessionResponse {
+  sessionId: string;
+}
+
+async function newSession(): Promise<string> {
   const res = await fetch(`${ORIGIN}/api/session`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: "{}",
   });
-  return (await res.json()).sessionId as string;
+  const data = (await res.json()) as SessionResponse;
+  return data.sessionId;
 }
 
 const SCRIPT = [
@@ -41,19 +47,21 @@ await initStore({ forceMemory: true });
 const sid = await newSession();
 console.log(`session=${sid}\n`);
 
+const dispatchFn: DispatchFn = async (name, params) => {
+  const res = await fetch(`${ORIGIN}/api/tools/${name}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(params ?? {}),
+  });
+  return (await res.json()) as ToolResult;
+};
+
 for (const [label, text] of SCRIPT) {
   const tools: string[] = [];
   const r = await runTurn({
     sessionId: sid,
     userText: text,
-    dispatch: async (name, params) => {
-      const res = await fetch(`${ORIGIN}/api/tools/${name}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(params ?? {}),
-      });
-      return res.json();
-    },
+    dispatch: dispatchFn,
     onToolCall: ({ name }) => {
       tools.push(name);
     },
@@ -67,11 +75,15 @@ for (const [label, text] of SCRIPT) {
 
 // The stored appearance must reach the UI for every product mentioned, and no
 // image field may exist anywhere in the payload.
-const state = await (await fetch(`${ORIGIN}/api/state/${sid}`)).json();
+const stateRes = await fetch(`${ORIGIN}/api/state/${sid}`);
+const state = (await stateRes.json()) as {
+  recentProducts?: Array<{ name: string; appearance?: { summary?: string } }>;
+};
 console.log("appearance carried to the UI:", JSON.stringify(
-  (state.recentProducts ?? []).map((p: any) => ({ name: p.name, appearance: p.appearance?.summary ?? null }))
+  (state.recentProducts ?? []).map((p) => ({ name: p.name, appearance: p.appearance?.summary ?? null }))
 ));
 console.log("any image field in state:", JSON.stringify(state).match(/imageUrl|visualDescription/i) ? "YES (regression)" : "no");
 
-const caps = await (await fetch(`${ORIGIN}/api/capabilities`)).json();
+const capsRes = await fetch(`${ORIGIN}/api/capabilities`);
+const caps = await capsRes.json();
 console.log("capabilities:", JSON.stringify(caps));

@@ -80,7 +80,11 @@ export class MongoStore implements Store {
   async searchProducts(filter: ProductFilter): Promise<Product[]> {
     const query: Record<string, unknown> = {};
     if (filter.category) query.category = filter.category;
-    const docs = await ProductModel.find(query).limit(200).lean();
+    if (filter.cursor) {
+      query._id = { $gt: filter.cursor };
+    }
+    const limit = filter.limit ?? 200;
+    const docs = await ProductModel.find(query).limit(limit).lean();
     return applyProductFilters(docs.map(productShape), filter);
   }
 

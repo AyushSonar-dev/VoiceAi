@@ -1,5 +1,6 @@
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import path from "node:path";
 import type { Server } from "node:http";
 import { fileURLToPath } from "node:url";
@@ -9,13 +10,40 @@ import { sessionRouter } from "./routes/session.js";
 import { toolsRouter } from "./routes/tools.js";
 import { stateRouter, capabilitiesRouter } from "./routes/state.js";
 import { voiceRouter } from "./routes/voice.js";
+import { optionalAuth } from "./middleware/auth.js";
+import { requestLogger } from "./middleware/requestLogger.js";
+import { apiRateLimiter } from "./middleware/rateLimit.js";
 
 export async function startServer(opts: { port?: number } = {}): Promise<Server> {
   await initStore();
 
   const app = express();
-  app.use(cors());
+
+  // Request logging (first, so it captures everything)
+  app.use(requestLogger);
+
+  // Rate limiting for all API routes
+  app.use("/api", apiRateLimiter);
+
+  // CORS with credentials support
+  const allowedOrigins = config.frontendOrigin.split(",").map((o) => o.trim());
+  app.use(
+    cors({
+      origin: (origin, callback) => {
+        // Allow requests with no origin (mobile apps, curl, etc.)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.includes(origin)) return callback(null, true);
+        callback(new Error("Not allowed by CORS"));
+      },
+      credentials: true,
+    })
+  );
+
   app.use(express.json({ limit: "30mb" }));
+  app.use(cookieParser(config.sessionSecret));
+
+  // Optional auth on all /api routes - attaches session if valid token present
+  app.use("/api", optionalAuth);
 
   app.get("/api/health", (_req, res) => {
     res.json({ ok: true });

@@ -177,7 +177,7 @@ export function EchoApp() {
         if (cancelled) return;
         setCaps(capabilities);
         setSessionId(id);
-        const s = await getState(id);
+        const s = await getState();
         if (!cancelled) {
           // Treat product suggestions as ephemeral: start fresh on browser reload.
           // Keep cart, lastAction, lastOrder from server; drop recentProducts for display.
@@ -212,13 +212,12 @@ export function EchoApp() {
   );
 
   const refreshState = useCallback(async () => {
-    if (!sessionId) return;
-    const s = await getState(sessionId).catch(() => null);
+    const s = await getState().catch(() => null);
     if (s) {
       stateRef.current = s;
       setEchoState(s);
     }
-  }, [sessionId]);
+  }, []);
 
   /**
    * Highlight whichever product the agent is currently describing. Matching uses
@@ -258,7 +257,7 @@ export function EchoApp() {
     const setup = await getVoiceSetup();
     const session = new VoiceAgentSession(
       setup,
-      async (name, args) => callTool(name, args, sessionId),
+      async (name, args) => callTool(name, args),
       {
         onStatus: (status) => setAgentStatus(status),
         onUserTurnStart: () => {
@@ -363,7 +362,7 @@ export function EchoApp() {
       setBusy(true);
       setFillerText("");
       try {
-        const events = await postTurn({ sessionId, ...input });
+        const events = await postTurn(input);
         if (events.userText) {
           transcript.commit("user", events.userText);
         }
@@ -388,7 +387,7 @@ export function EchoApp() {
         setFillerText("");
       }
     },
-    [sessionId, caps, effectiveBusy, ensureVoice, playReply, transcript]
+    [caps, effectiveBusy, ensureVoice, playReply, transcript]
   );
 
   const handleConnect = useCallback(async () => {

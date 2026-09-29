@@ -98,6 +98,16 @@ export function sessionShape(doc: any): ConversationSession {
     sessionId: doc.sessionId,
     recentProductIds: (doc.recentProductIds || []).map((x: unknown) => String(x)),
     lastAction: doc.lastAction ?? null,
+    currentProductId: doc.currentProductId ?? null,
+    recentSearchQuery: doc.recentSearchQuery ?? null,
+    recentCategory: doc.recentCategory ?? null,
+    recentIntent: doc.recentIntent ?? null,
+    recentProductReferences: (doc.recentProductReferences || []).map((x: any) => ({
+      productId: String(x.productId),
+      context: String(x.context),
+      timestamp: Number(x.timestamp),
+    })),
+    turnCount: Number(doc.turnCount ?? 0),
   };
 }
 

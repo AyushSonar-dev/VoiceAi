@@ -84,6 +84,7 @@ export interface VoiceAgentSetup {
     input: Record<string, unknown>;
     output: Record<string, unknown>;
   };
+  wsUrl: string;
 }
 
 export interface ToolResult {

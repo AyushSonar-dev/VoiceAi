@@ -1,4 +1,4 @@
-import { Router } from "express";
+import { Router, type Request, type Response } from "express";
 import { getStore, getMode, storeCapabilities } from "../db/index.js";
 import {
   requireSession,
@@ -7,6 +7,7 @@ import {
 import { config } from "../config.js";
 import { activeProviderName } from "../agent/llm/providers.js";
 import type { ProductAppearance } from "../types.js";
+import { requireAuth } from "../middleware/auth.js";
 
 export interface EchoState {
   sessionId: string;
@@ -64,11 +65,27 @@ export async function buildState(sessionId: string): Promise<EchoState> {
 export function stateRouter(): Router {
   const router = Router();
 
-  // UI state snapshot used by the frontend to render products, cart, coupon and
-  // last order in sync with the backend (the frontend never computes totals).
-  router.get("/state/:sessionId", async (req, res) => {
+  // UI state snapshot - requires authentication, uses authenticated session
+  router.get("/state", requireAuth, async (req: Request, res: Response) => {
     try {
-      const state = await buildState(req.params.sessionId);
+      const auth = (req as any).auth;
+      const state = await buildState(auth.sessionId);
+      res.json(state);
+    } catch (err) {
+      res.status(400).json({ error: true, message: (err as Error).message });
+    }
+  });
+
+  // Legacy endpoint for backward compatibility - requires auth and ownership
+  router.get("/state/:sessionId", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const auth = (req as any).auth;
+      const requestedSessionId = req.params.sessionId;
+      if (requestedSessionId !== auth.sessionId) {
+        res.status(403).json({ error: true, code: "forbidden", message: "Cannot access another session's state" });
+        return;
+      }
+      const state = await buildState(requestedSessionId);
       res.json(state);
     } catch (err) {
       res.status(400).json({ error: true, message: (err as Error).message });

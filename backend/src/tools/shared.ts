@@ -43,24 +43,41 @@ export async function requireSession(sessionId: string): Promise<ConversationSes
 }
 
 const MAX_RECENT = 24;
+const MAX_PRODUCT_REFERENCES = 10;
 
 /**
  * Remember product ids for the current turn. Only these are referenceable by
  * the LLM. Most-recent-first, deduped, bounded.
+ * Also updates extended conversational memory fields.
  */
 export async function rememberProducts(
   store: Store,
   session: ConversationSession,
-  ids: string[]
+  ids: string[],
+  context?: string
 ): Promise<ConversationSession> {
   const fresh: string[] = [];
   for (const id of ids) {
     if (!fresh.includes(id) && !session.recentProductIds.includes(id)) fresh.push(id);
   }
   if (!fresh.length) return session;
+  
+  const now = Date.now();
+  const newReferences = fresh.map((id) => ({
+    productId: id,
+    context: context || "search",
+    timestamp: now,
+  }));
+  
+  const updatedReferences = [...newReferences, ...(session.recentProductReferences || [])].slice(0, MAX_PRODUCT_REFERENCES);
+  
   const updated: ConversationSession = {
     ...session,
     recentProductIds: [...fresh, ...session.recentProductIds].slice(0, MAX_RECENT),
+    recentProductReferences: updatedReferences,
+    // Update current product to the first one mentioned
+    currentProductId: fresh[0] ?? session.currentProductId,
+    turnCount: (session.turnCount || 0) + 1,
   };
   return store.saveSession(updated);
 }

@@ -12,7 +12,9 @@
     "seed": "npm run seed --workspace=backend",
     "demo": "npm run demo --workspace=backend",
     "typecheck": "npm run typecheck --workspace=backend && npm run typecheck --workspace=frontend",
-    "test": "npm run test --workspace=backend && npm run test --workspace=frontend"
+    "test": "npm run test --workspace=backend && npm run test --workspace=frontend",
+    "test:voice-e2e": "npm run test:voice-e2e --workspace=backend",
+    "verify:order": "npm run verify:order --workspace=backend"
   },
   "engines": {
     "node": ">=20"
