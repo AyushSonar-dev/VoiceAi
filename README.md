@@ -1,4 +1,4 @@
-# EchoLabs — Voice Shopping Assistant ("Echo")
+# Echo— Voice Shopping Assistant
 
 A voice-first shopping assistant built for **blind and low-vision shoppers**. You press one
 control, speak a request, and Echo finds products, adds them to a cart, applies coupons and
