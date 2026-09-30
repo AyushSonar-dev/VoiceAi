@@ -13,4 +13,4 @@ COPY backend/ ./backend/
 
 EXPOSE 4000
 
-CMD ["node", "--loader", "tsx/esm", "backend/src/index.ts"]
+CMD ["node", "--import", "tsx/esm", "backend/src/index.ts"]
