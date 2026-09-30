@@ -9,7 +9,7 @@ COPY backend/package.json ./backend/
 RUN npm install --workspace=backend --ignore-scripts
 
 # Copy backend source
-COPY backend/ ./backend/
+COPY . .
 
 EXPOSE 4000
 
