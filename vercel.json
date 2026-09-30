@@ -4,7 +4,4 @@
   "installCommand": "npm install",
   "framework": "nextjs",
   "ignoreCommand": "git diff --quiet HEAD^ HEAD -- frontend/",
-  "env": {
-    "BACKEND_ORIGIN": "@backend_origin"
-  }
 }
