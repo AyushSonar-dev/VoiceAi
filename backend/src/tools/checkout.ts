@@ -10,6 +10,9 @@ import {
 } from "./shared.js";
 import { formatPrice } from "../config.js";
 import type { ToolResult, Store, Cart } from "../types.js";
+// Invalidate product cache after stock decrements so subsequent searches
+// reflect the new stock level immediately (avoids serving stale inStock=true).
+import { invalidateProduct } from "./productCache.js";
 
 export interface CheckoutParams {
   sessionId: string;
@@ -101,6 +104,9 @@ export async function checkout(params: CheckoutParams): Promise<ToolResult> {
   const stockResults = await store.decrementStock(
     lines.map((l) => ({ productId: l.productId, delta: l.quantity }))
   );
+  // Cache invalidation: products whose stock just changed must not be served
+  // as cached (inStock=true) to the next request. O(lines) evictions.
+  for (const line of lines) invalidateProduct(line.productId);
 
   const saved = await store.saveCart({ ...cart, items: [], couponCode: null, discountPercent: 0 });
   await buildCartSummary(saved);

@@ -5,14 +5,14 @@ import { ALLOWED_CATEGORIES, config, formatPrice } from "../../config.js";
 /**
  * PLACEHOLDER BRAIN (clearly marked).
  *
- * Runs ONLY while OPENAI_API_KEY is unset, so the tool-use loop (and the whole
+ * Runs ONLY while GEMINI_API_KEY is unset, so the tool-use loop (and the whole
  * voice pipeline) stays testable and demoable end-to-end before a real LLM key
- * is provided. It implements the exact same Llm interface as OpenAiClient and
+ * is provided. It implements the exact same Llm interface as GeminiClient and
  * exercises the SAME loop code — it calls tools, waits for their results, and
  * only then speaks (never fabricates outcomes, because its replies quote the
  * backend's tool.message).
  *
- * Swap to the real brain the moment OPENAI_API_KEY is set: llm/index.ts does it.
+ * Swap to the real brain the moment GEMINI_API_KEY is set: llm/index.ts does it.
  */
 export class PlaceholderBrain implements Llm {
   /** Debug trail exposed for tests/observability. */

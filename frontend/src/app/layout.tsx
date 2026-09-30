@@ -3,13 +3,16 @@ import type { PropsWithChildren } from "react";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Echo — Voice Shopping Assistant",
-  description: "A voice-first, screen-reader friendly shopping assistant.",
+  title: "EchoMart — Voice Shopping, Reimagined",
+  description:
+    "Shop hands-free with your voice. EchoMart's AI assistant finds products, " +
+    "manages your cart, and checks out — all through natural conversation. " +
+    "Built for accessibility, powered by AssemblyAI.",
 };
 
 export const viewport: Viewport = {
-  themeColor: "#08090b",
-  colorScheme: "dark light",
+  themeColor: "#111111",
+  colorScheme: "light dark",
   width: "device-width",
   initialScale: 1,
 };
@@ -35,6 +38,7 @@ export const viewport: Viewport = {
  */
 const PREF_BOOTSTRAP = `(function(){try{var r=document.documentElement;
 var t=localStorage.getItem("echolabs.theme");
+// Default to light (store feel); respect saved preference or system dark-mode override
 r.dataset.theme=(t==="light"||t==="dark")?t:(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");
 var m=localStorage.getItem("echolabs.magnify");
 var scale=(m==="125"||m==="150"||m==="200")?parseInt(m,10)/100:1;

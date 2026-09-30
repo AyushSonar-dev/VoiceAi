@@ -9,27 +9,24 @@ interface Props {
   spotlightId: string | null;
   currency: string;
   busy: boolean;
+  wishlistIds?: Set<string>;
   onSelect: (product: RecentProduct) => void;
   onAdd: (product: RecentProduct) => void;
   onFocus: (product: RecentProduct) => void;
+  onWishlist?: (product: RecentProduct) => void;
   reducedMotion: boolean;
 }
 
-/**
- * Results, revealed beneath the core.
- *
- * A plain list of products in a responsive grid. It enters with one soft, short
- * stagger — enough to guide the eye downward, short enough that it never delays
- * the first tap. With reduced motion the products are simply present.
- */
 export function ProductList({
   products,
   spotlightId,
   currency,
   busy,
+  wishlistIds,
   onSelect,
   onAdd,
   onFocus,
+  onWishlist,
   reducedMotion,
 }: Props) {
   const libReduced = useReducedMotion();
@@ -68,11 +65,13 @@ export function ProductList({
                 product={product}
                 spotlight={product.id === spotlightId}
                 currency={currency}
+                wishlisted={wishlistIds?.has(product.id)}
                 onSelect={onSelect}
                 onAdd={(p) => {
                   if (!busy) onAdd(p);
                 }}
                 onFocus={onFocus}
+                onWishlist={onWishlist}
                 reducedMotion={reducedMotion}
               />
             </motion.li>

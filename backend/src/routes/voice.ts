@@ -7,6 +7,7 @@ import { config } from "../config.js";
 import { VOICE_AGENT_TOOL_DEFINITIONS } from "../tools/index.js";
 import { requireAuth } from "../middleware/auth.js";
 import { strictRateLimiter } from "../middleware/rateLimit.js";
+import { assemblyAiBreaker, CircuitOpenError } from "../middleware/circuitBreaker.js";
 
 export interface VoiceRequest {
   sessionId?: string;
@@ -149,8 +150,7 @@ export function voiceAgentSetupBody(): {
   return {
     session: {
       system_prompt: buildVoiceAgentSystemPrompt(),
-      greeting:
-        "Hi, I'm Echo. Ask me to find a product, add things to your cart, apply a coupon, or check out — all by voice. What are you looking for today?",
+      greeting: "Hey! It's Echo. So, what are we shopping for today?",
       tools: VOICE_AGENT_TOOL_DEFINITIONS,
       input: {
         format: { encoding: "audio/pcm" },
@@ -161,12 +161,15 @@ export function voiceAgentSetupBody(): {
           "bracelet", "earrings", "necklace", "saree", "earbuds", "television", "tshirt", "jeans",
           "backpack", "watch", "gift", "cart", "coupon", "checkout", "WELCOME15", "SAVE10", "VIP20",
         ],
+        // Ends turns as fast as AssemblyAI allows.
+        transcription_mode: "min_latency",
         turn_detection: {
-          vad_threshold: 0.5,
-          min_silence: 700,
-          max_silence: 3500,
+          // 300ms is the minimum AssemblyAI allows. It overrides adaptive
+          // semantic detection but cuts per-turn latency from ~1.5s to ~0.3s,
+          // which is the dominant latency complaint in a live voice demo.
+          min_silence: 300,
           interrupt_response: true,
-          interruption_delay: 120,
+          interruption_delay: 0,
         },
       },
       output: {
@@ -192,26 +195,45 @@ export function voiceRouter(): Router {
       return;
     }
     try {
-      const url = new URL(`${config.voiceAgentHost}/v1/token`);
-      url.searchParams.set("expires_in_seconds", String(config.voiceTokenTtlSeconds));
-      url.searchParams.set("max_session_duration_seconds", String(config.voiceMaxSessionSeconds));
-      const tokenRes = await fetch(url, {
-        headers: { Authorization: `Bearer ${config.assemblyaiKey}` },
+      // Circuit breaker wraps the AssemblyAI token-mint call.
+      // If the service has been failing repeatedly, we fail fast here
+      // instead of making the user wait for a timeout on every request.
+      const { token } = await assemblyAiBreaker.call(async () => {
+        const url = new URL(`${config.voiceAgentHost}/v1/token`);
+        url.searchParams.set("expires_in_seconds", String(config.voiceTokenTtlSeconds));
+        url.searchParams.set("max_session_duration_seconds", String(config.voiceMaxSessionSeconds));
+        const tokenRes = await fetch(url, {
+          headers: { Authorization: `Bearer ${config.assemblyaiKey}` },
+        });
+        if (!tokenRes.ok) {
+          const detail = await tokenRes.text().catch(() => "");
+          console.error(`[ECHOLABS] token mint failed (HTTP ${tokenRes.status}): ${detail.slice(0, 200)}`);
+          // Throw so the circuit breaker counts this as a failure.
+          throw Object.assign(new Error("token_mint_failed"), { status: tokenRes.status, detail: detail.slice(0, 300) });
+        }
+        return tokenRes.json() as Promise<{ token: string }>;
       });
-      if (!tokenRes.ok) {
-        const detail = await tokenRes.text().catch(() => "");
-        console.error(`[ECHOLABS] token mint failed (HTTP ${tokenRes.status}): ${detail.slice(0, 200)}`);
+      res.json({ token, session: voiceAgentSetupBody().session });
+    } catch (err) {
+      if (err instanceof CircuitOpenError) {
+        // Circuit is open — tell the client to back off.
+        res.status(503).json({
+          error: true,
+          code: "circuit_open",
+          message: "Voice service is temporarily unavailable. Please try again in a few seconds.",
+        });
+        return;
+      }
+      const e = err as any;
+      if (e.status) {
         res.status(502).json({
           error: true,
           code: "token_mint_failed",
           message: "Could not mint a Voice Agent token. Check ASSEMBLYAI_API_KEY and account scope.",
-          detail: detail.slice(0, 300),
+          detail: e.detail ?? "",
         });
         return;
       }
-      const { token } = (await tokenRes.json()) as { token: string };
-      res.json({ token, session: voiceAgentSetupBody().session, wsUrl: config.voiceAgentWsUrl });
-    } catch (err) {
       console.error("[ECHOLABS] voice setup failed:", err instanceof Error ? err.message : err);
       res.status(500).json({ error: true, code: "setup_failed", message: "Voice setup failed." });
     }

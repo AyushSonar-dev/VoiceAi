@@ -1,4 +1,4 @@
-import type { Capabilities, EchoState, SseEvent, ToolResult, TurnEvents, VoiceAgentSetup } from "@/types";
+import type { Capabilities, EchoState, RecentProduct, SseEvent, ToolResult, TurnEvents, VoiceAgentSetup } from "@/types";
 
 const DEFAULT_FETCH_OPTS: RequestInit = {
   credentials: "include",
@@ -34,6 +34,11 @@ export async function newSession(): Promise<string> {
 
 export async function getCapabilities(): Promise<Capabilities> {
   return readJson<Capabilities>("/api/capabilities");
+}
+
+export async function getAllProducts(): Promise<RecentProduct[]> {
+  const data = await readJson<{ products: RecentProduct[] }>("/api/products");
+  return data.products;
 }
 
 export async function getState(): Promise<EchoState> {

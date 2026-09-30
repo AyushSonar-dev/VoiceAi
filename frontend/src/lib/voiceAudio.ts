@@ -159,10 +159,12 @@ export interface VoicePlayerOptions {
 export function createPlayer(context: AudioContext, options: VoicePlayerOptions = {}): VoicePlayer {
   let playbackTime = context.currentTime;
   const { onLevel } = options;
-  // Queue of { at, duration, peak } so the level meter decays to silence when
-  // the scheduled audio has actually finished, not on an arbitrary timer.
   let queue: Array<{ at: number; duration: number; peak: number }> = [];
   let raf = 0;
+  // Every scheduled source is tracked so flush() can call .stop() on them
+  // immediately — without this, already-queued nodes play through to the end
+  // even after flush() resets the clock.
+  const activeSources = new Set<AudioBufferSourceNode>();
 
   const stopMeter = () => {
     if (raf) cancelAnimationFrame(raf);
@@ -211,6 +213,8 @@ export function createPlayer(context: AudioContext, options: VoicePlayerOptions 
       const src = context.createBufferSource();
       src.buffer = buffer;
       src.connect(context.destination);
+      activeSources.add(src);
+      src.onended = () => activeSources.delete(src);
 
       const now = context.currentTime;
       playbackTime = Math.max(playbackTime, now);
@@ -220,6 +224,11 @@ export function createPlayer(context: AudioContext, options: VoicePlayerOptions 
       ensureMeter();
     },
     flush: () => {
+      // Stop every scheduled/playing node immediately so audio cuts off at once.
+      for (const src of activeSources) {
+        try { src.stop(0); } catch { /* already ended */ }
+      }
+      activeSources.clear();
       playbackTime = context.currentTime;
       queue = [];
       stopMeter();

@@ -23,7 +23,26 @@ export class MongoStore implements Store {
   async init(): Promise<Store> {
     const uri = configUri();
     try {
-      await mongoose.connect(uri, { serverSelectionTimeoutMS: 8000 });
+      await mongoose.connect(uri, {
+        // ── Connection pooling ──────────────────────────────────────────────
+        // System Design: a pool keeps N TCP connections open and reuses them
+        // across requests, avoiding the overhead of a new TCP+TLS handshake on
+        // every DB call (~50–200 ms each).
+        //
+        // maxPoolSize: 10 connections shared across all Express workers.
+        //   Rule of thumb: 2–5× the number of CPU cores for I/O-bound workloads.
+        //   For 2-core containers: 10 is conservative and safe.
+        maxPoolSize: 10,
+        // minPoolSize: keep 2 warm so cold requests don't pay the connect cost.
+        minPoolSize: 2,
+        // serverSelectionTimeoutMS: fail fast if Atlas is unreachable (e.g. bad
+        // URI, IP not whitelisted) rather than blocking the boot for 30 s.
+        serverSelectionTimeoutMS: 8_000,
+        // socketTimeoutMS: drop hung queries after 30 s.
+        socketTimeoutMS: 30_000,
+        // heartbeatFrequencyMS: detect a dead replica sooner (default: 10 000).
+        heartbeatFrequencyMS: 5_000,
+      });
       await this.seedIfEmpty();
       await this.backfillAppearance();
       return this;

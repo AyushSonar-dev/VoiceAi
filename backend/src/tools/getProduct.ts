@@ -11,6 +11,7 @@ import {
 } from "./shared.js";
 import { formatPrice } from "../config.js";
 import type { ToolResult } from "../types.js";
+import { getCachedProduct } from "./productCache.js";
 
 export interface GetProductParams {
   sessionId: string;
@@ -23,7 +24,9 @@ export async function getProduct(params: GetProductParams): Promise<ToolResult> 
 
   assertReferencable(session, params.productId);
 
-  const product = await store.getProductById(params.productId);
+  // Use cache (with stampede protection) — avoids a DB round-trip for the
+  // same product being described multiple times in one conversation.
+  const product = await getCachedProduct(params.productId);
   if (!product) {
     return fail("product_not_found", "That product could not be found.");
   }

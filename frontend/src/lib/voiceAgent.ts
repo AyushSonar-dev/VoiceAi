@@ -75,6 +75,8 @@ export class VoiceAgentSession {
   private connecting: Promise<void> | null = null;
   private status: AgentStatus | null = null;
   private speaking = false;
+  private bargeInTimer: ReturnType<typeof setTimeout> | null = null;
+  private lastUserSpeechAt = 0;
 
   constructor(
     private setup: VoiceAgentSetup,
@@ -139,14 +141,15 @@ export class VoiceAgentSession {
     if (!this.isReady) throw new Error("voice session is not ready");
     this.setStatus("thinking");
     this.ws?.send(JSON.stringify({ type: "conversation.message", role: "user", content: text }));
-    // Let the injected message land in context before forcing the reply —
-    // sending both back-to-back lets the agent answer from stale context.
-    await new Promise((r) => setTimeout(r, 400));
+    // Fire reply.create immediately after the message frame — AssemblyAI's
+    // voice agent processes frames in order, so the reply will follow the
+    // injected message without an artificial sleep. The previous 400 ms wait
+    // was pure wasted time on every single typed/button turn.
     this.ws?.send(
       JSON.stringify({
         type: "reply.create",
         instructions:
-          "Respond to the user's latest message. If they are describing what to shop for or an action to take, call the matching tool immediately — do not chat before calling.",
+          "Respond to the user's latest message like a person on a call. If it's something to shop for or an action to take, give a tiny acknowledgement like 'sure, one sec' and call the matching tool right away.",
       })
     );
   }
@@ -200,6 +203,7 @@ export class VoiceAgentSession {
   }
 
   private teardownAudio(): void {
+    this.clearBargeInTimer();
     this.captured?.mic.stop();
     this.captured = null;
     if (this.playerCtx) {
@@ -230,27 +234,35 @@ export class VoiceAgentSession {
         this.setStatus("listening");
         break;
       case "input.speech.started":
-        this.pendingTools.clear();
+        this.pauseForBargeIn();
         // A new turn begins, so any still-streaming bubble is now final.
         this.events.onUserTurnStart?.();
         this.setStatus("listening");
         break;
       case "transcript.user.delta":
+        this.lastUserSpeechAt = Date.now();
+        // First transcription delta = user is definitely speaking. If the audio
+        // context is still running at this point (input.speech.started may not
+        // have fired yet, or fired while the context was in a transitional state),
+        // force-suspend immediately. This gives sub-100ms pause latency.
+        if (this.playerCtx?.state === "running") this.pauseForBargeIn();
         // Cumulative: each event is the whole utterance so far, so it replaces
         // the previous partial rather than adding to it.
         this.events.onUserTranscript?.(String(msg.text ?? msg.delta ?? ""), false, "cumulative");
         break;
       case "transcript.user":
+        // A real user turn: whatever the agent was mid-way through is stale.
+        this.dropPausedAudio();
         this.setStatus("thinking");
         this.events.onUserTranscript?.(String(msg.text), true, "cumulative");
         break;
       case "reply.started":
-        this.player?.flush();
+        this.dropPausedAudio();
         this.setStatus("thinking");
         break;
       case "reply.audio":
         this.ensurePlayer().play(String(msg.data));
-        this.setSpeaking(true);
+        if (this.playerCtx?.state !== "suspended") this.setSpeaking(true);
         break;
       case "transcript.agent.delta":
         // Incremental: only the words just spoken, so they append.
@@ -271,22 +283,23 @@ export class VoiceAgentSession {
           name: String(msg.name),
           args: (typeof msg.arguments === "object" && msg.arguments) || {},
         };
-        this.pendingTools.set(inv.call_id, inv);
+        // Execute immediately — don't wait for reply.done. This way the tool
+        // runs concurrently with any filler audio the agent is still playing,
+        // and the result is ready the moment the agent needs it.
+        void this.executeToolNow(inv);
         break;
       }
       case "reply.done": {
         const interrupted = msg.status !== "completed";
         this.setSpeaking(false);
-        if (!interrupted && this.pendingTools.size > 0) {
-          this.setStatus("thinking");
-          this.events.onReplyDone?.({ interrupted: false, sentToolResult: false });
-          void this.executePendingTools();
-        } else {
-          this.pendingTools.clear();
-          this.player?.flush();
-          this.setStatus("listening");
-          this.events.onReplyDone?.({ interrupted, sentToolResult: false });
-        }
+        this.pendingTools.clear();
+        // Only flush on interruption. reply.done fires when all audio chunks
+        // have been *sent*, not when they have finished *playing* — flushing on
+        // a normal completion would stop the last buffered frames mid-sentence.
+        // A paused-but-not-interrupted reply is resumed by the backchannel timer.
+        if (interrupted) this.dropPausedAudio();
+        this.setStatus("listening");
+        this.events.onReplyDone?.({ interrupted, sentToolResult: false });
         break;
       }
       case "session.error":
@@ -302,30 +315,70 @@ export class VoiceAgentSession {
     }
   }
 
-  private async executePendingTools(): Promise<void> {
-    const invocations = [...this.pendingTools.values()];
-    this.pendingTools.clear();
-    for (const inv of invocations) {
-      try {
-        const result = await this.toolRunner(inv.name, inv.args);
-        this.events.onToolCall?.({ name: inv.name, args: inv.args, result });
-        const frame = {
-          type: "tool.result",
-          call_id: inv.call_id,
-          result: JSON.stringify(result),
-          is_error: !result.success,
-        };
-        if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(frame));
-      } catch (err) {
-        this.events.onError?.(err instanceof Error ? err.message : "tool execution failed");
-        const frame = {
-          type: "tool.result",
-          call_id: inv.call_id,
-          result: JSON.stringify({ success: false, error: "relay_error", message: "Tool execution failed.", data: {} }),
-          is_error: true,
-        };
-        if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(frame));
-      }
+  /**
+   * The instant the user makes a sound, the agent goes quiet — suspending the
+   * output context freezes playback with no delay. Suspending (not flushing)
+   * matters because AssemblyAI's barge-in is semantic: an "mm-hmm" isn't an
+   * interruption, and the agent should carry on mid-word rather than lose it.
+   */
+  private pauseForBargeIn(): void {
+    const ctx = this.playerCtx;
+    if (!ctx || ctx.state !== "running") return;
+    void ctx.suspend();
+    this.setSpeaking(false);
+    this.lastUserSpeechAt = Date.now();
+    this.scheduleBackchannelResume();
+  }
+
+  // No interruption confirmed and the user has gone quiet → it was a
+  // backchannel ("mm-hmm"), so carry on. Never resume over live speech.
+  private scheduleBackchannelResume(): void {
+    this.clearBargeInTimer();
+    this.bargeInTimer = setTimeout(() => {
+      if (Date.now() - this.lastUserSpeechAt < 400) this.scheduleBackchannelResume();
+      else this.resumeAfterBackchannel();
+    }, 500);
+  }
+
+  private resumeAfterBackchannel(): void {
+    this.clearBargeInTimer();
+    const ctx = this.playerCtx;
+    if (ctx && ctx.state === "suspended") void ctx.resume();
+  }
+
+  private dropPausedAudio(): void {
+    this.clearBargeInTimer();
+    this.player?.flush();
+    this.setSpeaking(false);
+    const ctx = this.playerCtx;
+    if (ctx && ctx.state === "suspended") void ctx.resume();
+  }
+
+  private clearBargeInTimer(): void {
+    if (this.bargeInTimer !== null) clearTimeout(this.bargeInTimer);
+    this.bargeInTimer = null;
+  }
+
+  private async executeToolNow(inv: ToolInvocation): Promise<void> {
+    try {
+      const result = await this.toolRunner(inv.name, inv.args);
+      this.events.onToolCall?.({ name: inv.name, args: inv.args, result });
+      const frame = {
+        type: "tool.result",
+        call_id: inv.call_id,
+        result: JSON.stringify(result),
+        is_error: !result.success,
+      };
+      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(frame));
+    } catch (err) {
+      this.events.onError?.(err instanceof Error ? err.message : "tool execution failed");
+      const frame = {
+        type: "tool.result",
+        call_id: inv.call_id,
+        result: JSON.stringify({ success: false, error: "relay_error", message: "Tool execution failed.", data: {} }),
+        is_error: true,
+      };
+      if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(JSON.stringify(frame));
     }
   }
 

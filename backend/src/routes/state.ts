@@ -92,6 +92,23 @@ export function stateRouter(): Router {
     }
   });
 
+  // Full catalog browse — used by the frontend to populate the store grid on load
+  // so users can explore without asking the voice agent first.
+  router.get("/products", async (_req, res) => {
+    try {
+      const store = getStore();
+      const products = await store.allProducts();
+      res.json({
+        products: products.map((p) => ({
+          ...p,
+          inStock: p.stock > 0,
+        })),
+      });
+    } catch (err) {
+      res.status(500).json({ error: true, message: (err as Error).message });
+    }
+  });
+
   return router;
 }
 

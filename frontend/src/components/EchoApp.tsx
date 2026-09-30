@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { Capabilities, EchoState, RecentProduct } from "@/types";
-import { callTool, getCapabilities, getState, getVoiceSetup, newSession, postTurn } from "@/lib/api";
+import { callTool, getAllProducts, getCapabilities, getState, getVoiceSetup, newSession, postTurn } from "@/lib/api";
 import { ensureSessionId } from "@/lib/session";
 import { fallbackSpeak, startRecording, type RecordingHandle } from "@/lib/audio";
 import { VoiceAgentSession, type AgentStatus } from "@/lib/voiceAgent";
@@ -18,7 +18,6 @@ import { Composer } from "./Composer";
 import { ProductList } from "./ProductList";
 import { CartPanel } from "./CartPanel";
 import { CheckoutPanel } from "./CheckoutPanel";
-import { AccessibilityControls } from "./AccessibilityControls";
 
 /** Tool results worth hearing, phrased by the server rather than by us. */
 const ANNOUNCED_TOOLS = new Set([
@@ -70,6 +69,16 @@ export function EchoApp() {
   const [spotlightId, setSpotlightId] = useState<string | null>(null);
   const [cartOpen, setCartOpen] = useState(false);
   const [dismissedOrder, setDismissedOrder] = useState<string | null>(null);
+  const [wishlistIds, setWishlistIds] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("echo_wishlist") ?? "[]") as string[]); }
+    catch { return new Set(); }
+  });
+  const [zoomLevel, setZoomLevel] = useState<number>(() => {
+    try { return Number(localStorage.getItem("echo_zoom") ?? "1") || 1; }
+    catch { return 1; }
+  });
+  const [allCatalogProducts, setAllCatalogProducts] = useState<RecentProduct[]>([]);
+  const [catalogCategory, setCatalogCategory] = useState<string | null>(null);
 
   const prefs = usePrefs();
   const { reducedMotion } = prefs;
@@ -141,7 +150,15 @@ export function EchoApp() {
     };
   }, []);
 
-  const products = echoState?.recentProducts ?? [];
+  const voiceProducts = echoState?.recentProducts ?? [];
+
+  // Filtered catalog for direct browsing. Voice results take the top spots;
+  // rest of catalog fills below (deduplicated by id).
+  const voiceIds = new Set(voiceProducts.map((p) => p.id));
+  const filteredCatalog = allCatalogProducts.filter(
+    (p) => !voiceIds.has(p.id) && (!catalogCategory || p.category === catalogCategory)
+  );
+  const products = [...voiceProducts, ...filteredCatalog];
   const hasResults = products.length > 0;
   const order = echoState?.lastOrder ?? null;
   const showOrder = order !== null && order.id !== dismissedOrder;
@@ -170,25 +187,23 @@ export function EchoApp() {
     let cancelled = false;
     (async () => {
       try {
-        const [capabilities, id] = await Promise.all([
+        const [capabilities, id, catalog] = await Promise.all([
           getCapabilities().catch(() => null),
           ensureSessionId(newSession),
+          getAllProducts().catch(() => [] as RecentProduct[]),
         ]);
         if (cancelled) return;
         setCaps(capabilities);
         setSessionId(id);
         const s = await getState();
         if (!cancelled) {
-          // Treat product suggestions as ephemeral: start fresh on browser reload.
-          // Keep cart, lastAction, lastOrder from server; drop recentProducts for display.
           const freshState: EchoState = {
             ...s,
             recentProducts: [],
           };
           stateRef.current = freshState;
           setEchoState(freshState);
-          // Do not auto-connect just because the session had prior results.
-          // User must initiate a new search/voice request.
+          setAllCatalogProducts(catalog);
         }
       } catch {
         if (!cancelled)
@@ -517,6 +532,16 @@ export function EchoApp() {
   // an action the button would ignore.
   const coreLocked = deactivating || agentStatus === "connecting";
 
+  const toggleWishlist = useCallback((product: RecentProduct) => {
+    setWishlistIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(product.id)) next.delete(product.id);
+      else next.add(product.id);
+      try { localStorage.setItem("echo_wishlist", JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
+
   const lastActionType =
     echoState?.lastAction && typeof echoState.lastAction === "object"
       ? (echoState.lastAction as { type?: string }).type
@@ -532,27 +557,67 @@ export function EchoApp() {
     }`;
   }, [caps, voiceAgent]);
 
+  const CATEGORIES = caps?.categories ?? [];
+
   return (
     <div className="app">
       <a className="skip-link" href="#main">
         Skip to the voice controls
       </a>
 
-      {/* Announcements that are not the conversation: what a tool confirmed, and
-          anything the user needs to act on. The transcript announces replies
-          itself, so nothing is deliberately sent to two regions at once. */}
+      {/* Screen-reader announcements (tool results, notices) */}
       <LiveRegion
         text={`${announcement}${notice ? ` ${notice.text}` : ""}`}
         label="Action result"
         busy={effectiveBusy}
       />
 
+      {/* ── Store header ─────────────────────────────────────────────────── */}
       <header className="masthead">
         <div className="masthead__brand">
-          <p className="brand">Echo</p>
+          {/* Brand name with accent on last letter */}
+          <p className="brand">Echo<span>.</span></p>
           <p className="masthead__status">{statusLine}</p>
         </div>
+
+        {/* Decorative search slot — voice is the real search here */}
+        <div className="masthead__search" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+          </svg>
+          <span>Ask Echo to find anything…</span>
+        </div>
+
         <div className="masthead__actions">
+          {/* Magnifier slider — stretch to zoom in/out */}
+          <div className="masthead__zoom" aria-label="Zoom controls">
+            <span className="zoom-label" aria-hidden="true">A</span>
+            <input
+              type="range"
+              className="zoom-slider"
+              min={75}
+              max={200}
+              step={5}
+              value={Math.round(zoomLevel * 100)}
+              onChange={(e) => {
+                const next = Number(e.target.value) / 100;
+                setZoomLevel(next);
+                try { localStorage.setItem("echo_zoom", String(next)); } catch {}
+              }}
+              aria-label={`Zoom level ${Math.round(zoomLevel * 100)}%`}
+              title={`${Math.round(zoomLevel * 100)}%`}
+            />
+            <span className="zoom-label zoom-label--lg" aria-hidden="true">A</span>
+          </div>
+
+          {/* Wishlist count badge */}
+          {wishlistIds.size > 0 && (
+            <div className="masthead__wish-count" aria-label={`${wishlistIds.size} items saved`} title={`${wishlistIds.size} saved`}>
+              <span aria-hidden="true">♥</span>
+              <span>{wishlistIds.size}</span>
+            </div>
+          )}
+
           <CartPanel
             open={cartOpen}
             onOpen={() => setCartOpen(true)}
@@ -565,11 +630,40 @@ export function EchoApp() {
             onApplyCoupon={(code) => void runTurn({ text: `apply the coupon code ${code}` })}
             onCheckout={() => void runTurn({ text: "check out" })}
           />
-          <AccessibilityControls prefs={prefs} compact />
         </div>
       </header>
 
-      <main id="main" className="app__content">
+      {/* ── Category chips bar ───────────────────────────────────────────── */}
+      {CATEGORIES.length > 0 && (
+        <nav className="categories-bar" aria-label="Browse by category">
+          <ul className="categories-bar__inner">
+            <li>
+              <button
+                type="button"
+                className="category-chip"
+                data-active={catalogCategory === null || undefined}
+                onClick={() => setCatalogCategory(null)}
+              >
+                All
+              </button>
+            </li>
+            {CATEGORIES.map((cat) => (
+              <li key={cat}>
+                <button
+                  type="button"
+                  className="category-chip"
+                  data-active={catalogCategory === cat || undefined}
+                  onClick={() => setCatalogCategory((prev) => prev === cat ? null : cat)}
+                >
+                  {cat}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </nav>
+      )}
+
+      <main id="main" className="app__content" style={{ "--content-scale": zoomLevel } as React.CSSProperties}>
         {/*
           The working stage. On a desktop this is two columns — the core and its
           state on the left, the live conversation and the input on the right —
@@ -577,6 +671,35 @@ export function EchoApp() {
           `zoom-region` as before, so magnification still re-lays out the stage
           rather than scaling it into a blurry overlay.
         */}
+        {/* ── Hero banner — shown on landing before session starts ───────── */}
+        {!connected && (
+          <section className="hero zoom-region" aria-labelledby="hero-heading">
+            <p className="hero__eyebrow">AssemblyAI Voice Agent</p>
+            <h1 id="hero-heading" className="hero__heading">
+              Shop with your voice,<br />hands-free.
+            </h1>
+            <p className="hero__sub">
+              Echo understands what you need, finds it, and adds it to your cart —
+              all in a natural conversation. Built for everyone, especially those
+              who rely on voice.
+            </p>
+            <div className="hero__actions">
+              <button
+                type="button"
+                className="btn btn--solid btn--hero"
+                disabled={coreLocked || caps === null}
+                onClick={() => void handleConnect()}
+              >
+                🎙 Start Voice Shopping
+              </button>
+            </div>
+            <div className="hero__badge">
+              <span className="hero__badge-dot" aria-hidden="true" />
+              {voiceAgent ? "Live voice agent ready" : "Demo mode — type your request"}
+            </div>
+          </section>
+        )}
+
         <div className="stage zoom-region">
           <div className="stage__core" ref={stageRef}>
             {/* One continuous object. Everything else is arranged around it, and
@@ -706,6 +829,7 @@ export function EchoApp() {
             spotlightId={spotlightId}
             currency={currency}
             busy={effectiveBusy}
+            wishlistIds={wishlistIds}
             reducedMotion={reducedMotion}
             onSelect={(p: RecentProduct) =>
               void runTurn({ text: `tell me more about the ${p.name}` })
@@ -714,6 +838,7 @@ export function EchoApp() {
               void runTurn({ text: `add the ${p.name} to my cart` })
             }
             onFocus={(p: RecentProduct) => setSpotlightId(p.id)}
+            onWishlist={toggleWishlist}
           />
         </div>
       </main>
@@ -721,8 +846,8 @@ export function EchoApp() {
       <footer className="app__foot">
         <p>
           {still ? "Reduced motion is on. " : ""}
-          Every action runs through the app&apos;s own tool gateway first — Echo only ever
-          speaks what the server confirmed.
+          Powered by <strong>AssemblyAI</strong> Voice Agent · Every action runs through
+          the app&apos;s tool gateway — Echo only ever speaks what the server confirmed.
         </p>
       </footer>
     </div>

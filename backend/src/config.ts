@@ -5,22 +5,6 @@ import { CATEGORIES } from "./types.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-/** A concrete, credentialed LLM vendor. */
-export type LlmProviderName = "openai" | "gemini";
-
-/** LLM_PROVIDER as configured: pin one vendor, or let the app choose. */
-export type LlmProviderSetting = "auto" | LlmProviderName;
-
-/**
- * Coerce LLM_PROVIDER to something usable. Anything unrecognised (including a
- * typo or an empty string) becomes "auto", because a mistyped provider name
- * should degrade to a working app, never to a boot crash.
- */
-export function normalizeProviderSetting(raw: string | undefined): LlmProviderSetting {
-  const value = (raw || "").trim().toLowerCase();
-  return value === "openai" || value === "gemini" ? value : "auto";
-}
-
 // Load repo-root .env first, then a backend-local .env.
 dotenv.config({ path: path.resolve(__dirname, "../../.env") });
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
@@ -44,7 +28,7 @@ export const config = {
   voiceAgentWsUrl: process.env.VOICE_AGENT_WS_URL || "wss://agents.assemblyai.com/v1/ws",
   voiceTokenTtlSeconds: Number(process.env.VOICE_TOKEN_TTL_SECONDS || 300),
   voiceMaxSessionSeconds: Number(process.env.VOICE_MAX_SESSION_SECONDS || 900),
-  voiceId: process.env.VOICE_ID || "ivy",
+  voiceId: process.env.VOICE_ID || "jane",
 
   elevenLabsKey: process.env.ELEVENLABS_API_KEY || "",
   elevenLabsVoiceId: process.env.ELEVENLABS_VOICE_ID || "21m00Tcm4TlvDq8ikWAM",
@@ -55,27 +39,7 @@ export const config = {
   elevenLabsStyle: Number(process.env.ELEVENLABS_STYLE || 0.6),
   elevenLabsUseSpeakerBoost: process.env.ELEVENLABS_USE_SPEAKER_BOOST !== "false",
 
-  // ---------------------------------------------------------------------
-  // LLM PROVIDER (conversation brain)
-  // ---------------------------------------------------------------------
-  // Both providers speak the same OpenAI wire protocol, so they share ONE
-  // client, ONE tool-calling loop, and ONE set of tool definitions. Only the
-  // credentials and the model name differ. See agent/llm/providers.ts.
-  //
-  // LLM_PROVIDER: "auto" (default) prefers OpenAI when OPENAI_API_KEY is set
-  // and otherwise uses Gemini. "openai"/"gemini" pin one explicitly (handy for
-  // local development without an OpenAI key). An unknown value is treated as
-  // "auto" so a typo degrades to a working app rather than a boot crash.
-  llmProvider: normalizeProviderSetting(process.env.LLM_PROVIDER),
-
-  openaiKey: process.env.OPENAI_API_KEY || "",
-  openaiBaseUrl: (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/+$/, ""),
-  // OPENAI_MODEL is the documented name; LLM_MODEL is kept as a legacy alias so
-  // existing .env files and deployments keep working untouched.
-  openaiModel: process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini",
-  /** @deprecated legacy alias for {@link config.openaiModel}. */
-  llmModel: process.env.OPENAI_MODEL || process.env.LLM_MODEL || "gpt-4o-mini",
-
+  // LLM for the text/demo path (the live voice path uses AssemblyAI's own LLM).
   geminiKey: process.env.GEMINI_API_KEY || "",
   /**
    * Google's official OpenAI-compatibility endpoint. The `openai` SDK appends

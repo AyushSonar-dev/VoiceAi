@@ -11,6 +11,7 @@ import {
   ToolError,
 } from "./shared.js";
 import type { Product, ToolResult } from "../types.js";
+// Centralised cache with stampede-protection (shared with getProduct).
 
 export interface SearchProductsParams {
   sessionId: string;

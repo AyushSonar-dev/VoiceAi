@@ -282,8 +282,8 @@ test("appearance is answerable for every single seeded product", async () => {
 // ---------------------------------------------------------------------------
 
 test("no image-description tool is exposed to any LLM", () => {
-  const openaiNames = TOOL_DEFINITIONS.map((d) => d.function.name);
-  assert.ok(!openaiNames.includes("describeProductImage"));
+  const toolNames = TOOL_DEFINITIONS.map((d) => d.function.name);
+  assert.ok(!toolNames.includes("describeProductImage"));
   const voiceNames = VOICE_AGENT_TOOL_DEFINITIONS.map((d) => d.name);
   assert.ok(!voiceNames.includes("describe_product_image"));
   assert.ok(!("describe_product_image" in VOICE_AGENT_TOOL_NAME_MAP));

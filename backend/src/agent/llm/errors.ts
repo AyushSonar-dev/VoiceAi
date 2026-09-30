@@ -1,16 +1,10 @@
-import type { LlmProviderName } from "../../config.js";
-
 /**
- * Provider errors are classified, not blanket-caught.
- *
- * Falling back is only correct when the SAME request would plausibly succeed on
- * a different vendor: bad credentials, exhausted quota, rate limiting, or the
- * provider being down. A 400 from a malformed tool definition is our bug — it
- * would fail identically on Gemini, so retrying it there would only bury the
- * real error behind a second, more confusing one.
+ * Provider errors are classified, not blanket-caught: auth, quota, rate limits,
+ * transport and 5xx are the provider's problem; a 400 from a malformed tool
+ * definition is our bug and must surface as such.
  */
 
-/** HTTP statuses worth retrying on a different vendor. */
+/** HTTP statuses that mean the provider (not our request) failed. */
 const RECOVERABLE_STATUS = new Set([401, 403, 408, 429, 500, 502, 503, 504, 529]);
 
 /** Transport-level failures: the request never got an answer. */
@@ -41,14 +35,12 @@ function statusOf(err: unknown): number | null {
 }
 
 /**
- * Whether this failure justifies trying the next provider.
- *
- * True for auth, quota, rate-limit, transport and 5xx failures. False for
- * programming errors, malformed tool definitions, and client-side 4xx
- * (400/404/422) — those are bugs or misconfiguration, and retrying them
- * elsewhere only hides the cause.
+ * Whether this failure is the provider's, not ours. False for programming
+ * errors, malformed tool definitions, and client-side 4xx (400/404/422).
  */
 export function isRecoverableProviderError(err: unknown): boolean {
+  // Our own breaker failing fast means "this provider is down".
+  if ((err as { name?: unknown } | null)?.name === "CircuitOpenError") return true;
   const status = statusOf(err);
   if (status !== null) {
     if (RECOVERABLE_STATUS.has(status)) return true;
@@ -95,12 +87,12 @@ export function redactSecrets(message: string): string {
 
 /** A provider call failed. Carries the vendor/model for actionable logs. */
 export class LlmProviderError extends Error {
-  readonly provider: LlmProviderName;
+  readonly provider: string;
   readonly model: string;
   readonly status: number | null;
   readonly recoverable: boolean;
 
-  constructor(input: { provider: LlmProviderName; model: string; cause: unknown }) {
+  constructor(input: { provider: string; model: string; cause: unknown }) {
     const detail = redactSecrets(input.cause instanceof Error ? input.cause.message : String(input.cause));
     super(`llm_${input.provider}_failed: ${statusOf(input.cause) ?? "network"} ${detail}`);
     this.name = "LlmProviderError";

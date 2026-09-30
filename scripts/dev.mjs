@@ -16,8 +16,12 @@
  */
 import { spawn } from "node:child_process";
 import { createConnection } from "node:net";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const npm = process.platform === "win32" ? "npm.cmd" : "npm";
+// Resolve the monorepo root regardless of where the user invoked npm from.
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 const backendPort = Number(process.env.PORT || 4000);
 const frontendPort = Number(process.env.FRONTEND_PORT || 3000);
@@ -61,12 +65,14 @@ if (busy.length > 0) {
   process.exit(1);
 }
 
+// Each target runs `npm run dev` from its own workspace directory so that npm
+// correctly resolves binaries from the hoisted root node_modules/.bin.
 const targets = [
-  { name: "backend", color: "[36m", args: ["run", "dev", "--workspace=backend"] },
-  { name: "frontend", color: "[35m", args: ["run", "dev", "--workspace=frontend"] },
+  { name: "backend", color: "\x1b[36m", cwd: join(root, "backend"),  args: ["run", "dev"] },
+  { name: "frontend", color: "\x1b[35m", cwd: join(root, "frontend"), args: ["run", "dev"] },
 ];
 
-const RESET = "[0m";
+const RESET = "\x1b[0m";
 const children = [];
 let shuttingDown = false;
 
@@ -101,8 +107,15 @@ function stopAll(code) {
 
 console.log("Starting EchoLabs — backend (tool gateway) + frontend.\n");
 
-for (const { name, color, args } of targets) {
-  const child = spawn(npm, args, { stdio: ["ignore", "pipe", "pipe"], env: process.env });
+for (const { name, color, cwd, args } of targets) {
+  // Pass cwd so each npm process runs from its workspace directory.
+  // On Windows, shell:true is required to invoke npm.cmd (a batch file).
+  const child = spawn(npm, args, {
+    stdio: ["ignore", "pipe", "pipe"],
+    env: process.env,
+    cwd,
+    shell: process.platform === "win32",
+  });
   prefixStream(name, color, child.stdout, process.stdout);
   prefixStream(name, color, child.stderr, process.stderr);
   child.on("error", (err) => {

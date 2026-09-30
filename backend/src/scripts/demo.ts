@@ -7,7 +7,7 @@ import type { Server } from "node:http";
 /**
  * Keyless end-to-end demo: runs the real tool gateway over HTTP and the real
  * tool-use loop, driven by the clearly-marked PLACEHOLDER brain (no LLM key
- * needed). Set OPENAI_API_KEY to have the loop driven by the real model instead.
+ * needed). Set GEMINI_API_KEY to have the loop driven by the real model instead.
  */
 async function main(): Promise<void> {
   __resetStoreForTests();

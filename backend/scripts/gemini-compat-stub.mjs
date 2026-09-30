@@ -5,18 +5,14 @@
  * Gemini key or quota:
  *
  *   node backend/scripts/gemini-compat-stub.mjs          # listens on :4601
- *   OPENAI_API_KEY="" GEMINI_API_KEY=stub \
+ *   GEMINI_API_KEY=stub \
  *     GEMINI_BASE_URL=http://127.0.0.1:4601/v1beta/openai \
  *     npm run dev:backend
  *   npx tsx backend/scripts/e2e-gemini.ts
  *
- * It deliberately implements ONLY the Gemini side: to test the OpenAI ->
- * Gemini fallback, make it reject `gpt-*` models (see the fallback test in
- * backend/test/providers.test.ts, which does exactly that).
- *
  * It speaks the exact wire protocol the `openai` SDK produces against
  * https://generativelanguage.googleapis.com/v1beta/openai/ — so the real
- * OpenAiClient, the real tool-calling loop and the real tools all run
+ * GeminiClient, the real tool-calling loop and the real tools all run
  * unmodified. Only the MODEL is stubbed (deterministically, so the E2E run is
  * reproducible).
  *

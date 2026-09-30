@@ -3,8 +3,7 @@
  *
  * Nothing is stubbed except the model itself: the real provider selection, the
  * real tool-calling loop, the real HTTP tool gateway and the real shopping tools
- * all execute. GEMINI_API_KEY is the only LLM credential present; OPENAI_API_KEY
- * is explicitly empty. How a product looks is answered from the appearance the
+ * all execute. How a product looks is answered from the appearance the
  * catalog already stores, so no image is ever sent.
  */
 import { runTurn } from "../src/agent/agent.js";
